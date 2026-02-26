@@ -1,0 +1,12 @@
+﻿{
+  "Client": {
+    "Id": "sogest",
+    "Name": "SOGEST",
+    "Environment": "Production"
+  },
+  "InstallerMode": {
+    "Compliance": true,
+    "ZeroTouch": false
+  },
+  "Applications": []
+}

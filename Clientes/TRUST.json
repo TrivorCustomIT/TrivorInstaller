@@ -1,0 +1,12 @@
+﻿{
+  "Client": {
+    "Id": "trust",
+    "Name": "TRUST",
+    "Environment": "Production"
+  },
+  "InstallerMode": {
+    "Compliance": true,
+    "ZeroTouch": false
+  },
+  "Applications": []
+}

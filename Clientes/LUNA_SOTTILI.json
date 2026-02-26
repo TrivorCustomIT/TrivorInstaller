@@ -1,0 +1,12 @@
+﻿{
+  "Client": {
+    "Id": "luna_sottili",
+    "Name": "LUNA SOTTILI",
+    "Environment": "Production"
+  },
+  "InstallerMode": {
+    "Compliance": true,
+    "ZeroTouch": false
+  },
+  "Applications": []
+}

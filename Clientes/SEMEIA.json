@@ -1,0 +1,12 @@
+﻿{
+  "Client": {
+    "Id": "semeia",
+    "Name": "SEMEIA",
+    "Environment": "Production"
+  },
+  "InstallerMode": {
+    "Compliance": true,
+    "ZeroTouch": false
+  },
+  "Applications": []
+}

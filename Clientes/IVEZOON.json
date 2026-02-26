@@ -1,0 +1,12 @@
+﻿{
+  "Client": {
+    "Id": "ivezoon",
+    "Name": "IVEZOON",
+    "Environment": "Production"
+  },
+  "InstallerMode": {
+    "Compliance": true,
+    "ZeroTouch": false
+  },
+  "Applications": []
+}

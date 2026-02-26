@@ -1,0 +1,12 @@
+﻿{
+  "Client": {
+    "Id": "fmcsv",
+    "Name": "FMCSV",
+    "Environment": "Production"
+  },
+  "InstallerMode": {
+    "Compliance": true,
+    "ZeroTouch": false
+  },
+  "Applications": []
+}

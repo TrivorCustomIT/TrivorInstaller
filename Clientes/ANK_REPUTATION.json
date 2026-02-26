@@ -1,0 +1,12 @@
+﻿{
+  "Client": {
+    "Id": "ank_reputation",
+    "Name": "ANK REPUTATION",
+    "Environment": "Production"
+  },
+  "InstallerMode": {
+    "Compliance": true,
+    "ZeroTouch": false
+  },
+  "Applications": []
+}

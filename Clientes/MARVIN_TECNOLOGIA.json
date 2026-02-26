@@ -1,0 +1,12 @@
+﻿{
+  "Client": {
+    "Id": "marvin_tecnologia",
+    "Name": "MARVIN TECNOLOGIA",
+    "Environment": "Production"
+  },
+  "InstallerMode": {
+    "Compliance": true,
+    "ZeroTouch": false
+  },
+  "Applications": []
+}

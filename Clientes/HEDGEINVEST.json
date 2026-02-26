@@ -1,0 +1,12 @@
+﻿{
+  "Client": {
+    "Id": "hedgeinvest",
+    "Name": "HEDGEINVEST",
+    "Environment": "Production"
+  },
+  "InstallerMode": {
+    "Compliance": true,
+    "ZeroTouch": false
+  },
+  "Applications": []
+}

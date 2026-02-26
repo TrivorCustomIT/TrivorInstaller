@@ -1,0 +1,12 @@
+﻿{
+  "Client": {
+    "Id": "square_capital",
+    "Name": "SQUARE CAPITAL",
+    "Environment": "Production"
+  },
+  "InstallerMode": {
+    "Compliance": true,
+    "ZeroTouch": false
+  },
+  "Applications": []
+}

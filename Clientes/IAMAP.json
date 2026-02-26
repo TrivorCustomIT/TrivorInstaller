@@ -1,0 +1,12 @@
+﻿{
+  "Client": {
+    "Id": "iamap",
+    "Name": "IAMAP",
+    "Environment": "Production"
+  },
+  "InstallerMode": {
+    "Compliance": true,
+    "ZeroTouch": false
+  },
+  "Applications": []
+}

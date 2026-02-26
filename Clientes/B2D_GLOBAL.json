@@ -1,0 +1,12 @@
+﻿{
+  "Client": {
+    "Id": "b2d_global",
+    "Name": "B2D GLOBAL",
+    "Environment": "Production"
+  },
+  "InstallerMode": {
+    "Compliance": true,
+    "ZeroTouch": false
+  },
+  "Applications": []
+}

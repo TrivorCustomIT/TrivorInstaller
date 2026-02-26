@@ -1,0 +1,12 @@
+﻿{
+  "Client": {
+    "Id": "arsenal_sermig",
+    "Name": "ARSENAL SERMIG",
+    "Environment": "Production"
+  },
+  "InstallerMode": {
+    "Compliance": true,
+    "ZeroTouch": false
+  },
+  "Applications": []
+}

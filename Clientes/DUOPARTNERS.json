@@ -1,0 +1,12 @@
+﻿{
+  "Client": {
+    "Id": "duopartners",
+    "Name": "DUOPARTNERS",
+    "Environment": "Production"
+  },
+  "InstallerMode": {
+    "Compliance": true,
+    "ZeroTouch": false
+  },
+  "Applications": []
+}

@@ -1,0 +1,12 @@
+﻿{
+  "Client": {
+    "Id": "darolpar",
+    "Name": "DAROLPAR",
+    "Environment": "Production"
+  },
+  "InstallerMode": {
+    "Compliance": true,
+    "ZeroTouch": false
+  },
+  "Applications": []
+}

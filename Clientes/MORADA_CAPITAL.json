@@ -1,0 +1,12 @@
+﻿{
+  "Client": {
+    "Id": "morada_capital",
+    "Name": "MORADA CAPITAL",
+    "Environment": "Production"
+  },
+  "InstallerMode": {
+    "Compliance": true,
+    "ZeroTouch": false
+  },
+  "Applications": []
+}

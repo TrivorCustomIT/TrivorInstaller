@@ -1,0 +1,12 @@
+﻿{
+  "Client": {
+    "Id": "provence_capital",
+    "Name": "PROVENCE CAPITAL",
+    "Environment": "Production"
+  },
+  "InstallerMode": {
+    "Compliance": true,
+    "ZeroTouch": false
+  },
+  "Applications": []
+}

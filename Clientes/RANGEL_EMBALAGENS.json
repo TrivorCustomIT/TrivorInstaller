@@ -1,0 +1,12 @@
+﻿{
+  "Client": {
+    "Id": "rangel_embalagens",
+    "Name": "RANGEL EMBALAGENS",
+    "Environment": "Production"
+  },
+  "InstallerMode": {
+    "Compliance": true,
+    "ZeroTouch": false
+  },
+  "Applications": []
+}

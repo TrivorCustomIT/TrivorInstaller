@@ -1,0 +1,12 @@
+﻿{
+  "Client": {
+    "Id": "mcf_consultoria_abrael",
+    "Name": "MCF CONSULTORIA ABRAEL",
+    "Environment": "Production"
+  },
+  "InstallerMode": {
+    "Compliance": true,
+    "ZeroTouch": false
+  },
+  "Applications": []
+}

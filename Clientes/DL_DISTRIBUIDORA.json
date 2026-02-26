@@ -1,0 +1,12 @@
+﻿{
+  "Client": {
+    "Id": "dl_distribuidora",
+    "Name": "DL DISTRIBUIDORA",
+    "Environment": "Production"
+  },
+  "InstallerMode": {
+    "Compliance": true,
+    "ZeroTouch": false
+  },
+  "Applications": []
+}

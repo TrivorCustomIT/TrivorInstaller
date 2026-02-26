@@ -1,0 +1,12 @@
+﻿{
+  "Client": {
+    "Id": "j2l",
+    "Name": "J2L",
+    "Environment": "Production"
+  },
+  "InstallerMode": {
+    "Compliance": true,
+    "ZeroTouch": false
+  },
+  "Applications": []
+}

@@ -1,0 +1,12 @@
+﻿{
+  "Client": {
+    "Id": "concertacao",
+    "Name": "CONCERTACAO",
+    "Environment": "Production"
+  },
+  "InstallerMode": {
+    "Compliance": true,
+    "ZeroTouch": false
+  },
+  "Applications": []
+}

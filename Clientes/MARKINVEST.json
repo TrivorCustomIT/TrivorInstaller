@@ -1,0 +1,12 @@
+﻿{
+  "Client": {
+    "Id": "markinvest",
+    "Name": "MARKINVEST",
+    "Environment": "Production"
+  },
+  "InstallerMode": {
+    "Compliance": true,
+    "ZeroTouch": false
+  },
+  "Applications": []
+}

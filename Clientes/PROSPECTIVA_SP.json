@@ -1,0 +1,12 @@
+﻿{
+  "Client": {
+    "Id": "prospectiva_sp",
+    "Name": "PROSPECTIVA SP",
+    "Environment": "Production"
+  },
+  "InstallerMode": {
+    "Compliance": true,
+    "ZeroTouch": false
+  },
+  "Applications": []
+}

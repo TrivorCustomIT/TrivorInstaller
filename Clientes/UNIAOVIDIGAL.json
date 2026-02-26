@@ -1,0 +1,12 @@
+﻿{
+  "Client": {
+    "Id": "uniavidigal",
+    "Name": "UNIAVIDIGAL",
+    "Environment": "Production"
+  },
+  "InstallerMode": {
+    "Compliance": true,
+    "ZeroTouch": false
+  },
+  "Applications": []
+}

@@ -1,0 +1,53 @@
+﻿{
+  "Client": "TRIVOR",
+  "Applications": [
+    {
+      "Id": "7zip",
+      "Name": "7-Zip",
+      "WingetId": "7zip.7zip"
+    },
+    {
+      "Id": "openvpn",
+      "Name": "OpenVPN",
+      "Detection": {
+        "Method": "Registry",
+        "DisplayName": "OpenVPN"
+      }
+    },
+    {
+      "Id": "firefox",
+      "Name": "Mozilla Firefox",
+      "Detection": {
+        "Method": "Exe",
+        "Path": "C:\\Program Files\\Mozilla Firefox\\firefox.exe"
+      }
+    },
+    {
+      "Id": "chrome",
+      "Name": "Google Chrome",
+      "WingetId": "Google.Chrome"
+    },
+    {
+      "Id": "rmm-agent",
+      "Name": "Trivor RMM Agent",
+      "Detection": {
+        "Method": "Hybrid",
+        "RegistryDisplayName": "Advanced Monitoring Agent",
+        "MinVersion": "10.14.4",
+        "ServiceName": "Advanced Monitoring Agent",
+        "ServiceDisplayName": "Advanced Monitoring Agent"
+      },
+      "Install": {
+        "Method": "RepoExePublic",
+        "Owner": "TrivorCustomIT",
+        "Repo": "TrivorInstallerRepository",
+        "Branch": "main",
+        "RelativePath": "Installers/clients/trivor/rmm/AGENT_407488_V10_14_4_RW.EXE",
+        "SilentArgs": "/silent /norestart",
+        "CacheFileName": "AGENT_407488_V10_14_4_RW.EXE",
+        "Sha256": "54EC72B2A471D1F777C7E0D25671C9F0396494AEF462F368985940E8EB5279B0",
+        "CleanAfterInstall": true
+      }
+    }
+  ]
+}

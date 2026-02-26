@@ -1,0 +1,12 @@
+﻿{
+  "Client": {
+    "Id": "eb_capital",
+    "Name": "EB CAPITAL",
+    "Environment": "Production"
+  },
+  "InstallerMode": {
+    "Compliance": true,
+    "ZeroTouch": false
+  },
+  "Applications": []
+}

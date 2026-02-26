@@ -1,0 +1,12 @@
+﻿{
+  "Client": {
+    "Id": "coinvest",
+    "Name": "COINVEST",
+    "Environment": "Production"
+  },
+  "InstallerMode": {
+    "Compliance": true,
+    "ZeroTouch": false
+  },
+  "Applications": []
+}

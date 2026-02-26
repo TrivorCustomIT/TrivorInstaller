@@ -1,0 +1,12 @@
+﻿{
+  "Client": {
+    "Id": "prysmo",
+    "Name": "PRYSMO",
+    "Environment": "Production"
+  },
+  "InstallerMode": {
+    "Compliance": true,
+    "ZeroTouch": false
+  },
+  "Applications": []
+}

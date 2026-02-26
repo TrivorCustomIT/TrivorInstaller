@@ -1,0 +1,12 @@
+﻿{
+  "Client": {
+    "Id": "instituto_belterra",
+    "Name": "INSTITUTO BELTERRA",
+    "Environment": "Production"
+  },
+  "InstallerMode": {
+    "Compliance": true,
+    "ZeroTouch": false
+  },
+  "Applications": []
+}

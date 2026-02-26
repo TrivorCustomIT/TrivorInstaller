@@ -1,0 +1,12 @@
+﻿{
+  "Client": {
+    "Id": "swp_contabilidade",
+    "Name": "SWP CONTABILIDADE",
+    "Environment": "Production"
+  },
+  "InstallerMode": {
+    "Compliance": true,
+    "ZeroTouch": false
+  },
+  "Applications": []
+}
