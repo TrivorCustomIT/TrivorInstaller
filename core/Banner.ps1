@@ -15,7 +15,7 @@ function Show-Banner {
 
     Write-Host ""
     Write-Host "===================================================="
-    Write-Host "              TRIVOR INSTALLER V3.21               "
+    Write-Host "              TRIVOR INSTALLER V3.22               "
     Write-Host "===================================================="
     Write-Host ""
     Write-Host $ascii -ForegroundColor Cyan
