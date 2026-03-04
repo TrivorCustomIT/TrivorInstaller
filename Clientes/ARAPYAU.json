@@ -1,6 +1,21 @@
 ﻿{
- "Client": "AARAPYAU",
+  "Client": "ARAPYAU",
   "Applications": [
+    {
+      "Id": "7zip",
+      "Name": "7-Zip",
+      "WingetId": "7zip.7zip"
+    },
+    {
+      "Id": "firefox",
+      "Name": "Mozilla Firefox",
+      "WingetId": "Mozilla.Firefox"
+    },
+    {
+      "Id": "chrome",
+      "Name": "Google Chrome",
+      "WingetId": "Google.Chrome"
+    },
     {
       "Id": "rmm-agent",
       "Name": "Trivor RMM Agent",
@@ -18,8 +33,26 @@
         "Branch": "main",
         "RelativePath": "Installers/clients/arapyau/rmm/AGENT_275000_V10_14_4_RW.EXE",
         "SilentArgs": "/silent /norestart",
-        "CacheFileName": "AGENT_275000_V10_14_4_RW.EXE",
+        "CacheFileName": "AAGENT_275000_V10_14_4_RW.EXE",
         "Sha256": "C60374E800E83588FF9F75577DEACFCBF8425F96F3BEB807E7C010CAAC2EC22A",
+        "CleanAfterInstall": true
+      }
+    },
+    {
+      "Id": "takecontrol",
+      "Name": "Take Control Agent",
+      "Detection": {
+        "Method": "Hybrid",
+        "RegistryDisplayName": "Agente Take Control",
+        "ServiceName": "Agente Take Control",
+        "ServiceDisplayName": "Agente Take Control"
+      },
+      "Install": {
+        "Method": "UrlExe",
+        "Url": "https://api.us0.swi-rc.com/download/getpcinstall.php?iid=874f6c92-17ca-11f1-b22b-0affd1392461",
+        "SilentArgs": "/silent",
+        "CacheFileName": "TakeControlAgent.exe",
+        "Sha256": "",
         "CleanAfterInstall": true
       }
     }
