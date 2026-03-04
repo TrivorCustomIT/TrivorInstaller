@@ -15,6 +15,16 @@
       "Id": "chrome",
       "Name": "Google Chrome",
       "WingetId": "Google.Chrome"
+    },
+    {
+      "Id": "edge",
+      "Name": "Microsoft Edge",
+      "WingetId": "Microsoft.Edge"
+    },
+    {
+      "Id": "adobe-reader",
+      "Name": "Adobe Reader DC (64-bit)",
+      "WingetId": "Adobe.Acrobat.Reader.64-bit"
     }
   ]
 }
