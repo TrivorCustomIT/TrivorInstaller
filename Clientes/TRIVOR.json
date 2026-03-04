@@ -1,4 +1,4 @@
-{
+﻿{
   "Client": "TRIVOR",
   "Applications": [
     {
@@ -17,10 +17,7 @@
     {
       "Id": "firefox",
       "Name": "Mozilla Firefox",
-      "Detection": {
-        "Method": "Exe",
-        "Path": "C:\\Program Files\\Mozilla Firefox\\firefox.exe"
-      }
+      "WingetId": "Mozilla.Firefox"
     },
     {
       "Id": "chrome",
