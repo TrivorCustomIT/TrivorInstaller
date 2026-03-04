@@ -1,12 +1,20 @@
 ﻿{
-  "Client": {
-    "Id": "mcf_consultoria_abrael",
-    "Name": "MCF CONSULTORIA ABRAEL",
-    "Environment": "Production"
-  },
-  "InstallerMode": {
-    "Compliance": true,
-    "ZeroTouch": false
-  },
-  "Applications": []
+ "Client": "MCF_CONSULTORIA_ABRAEL",
+  "Applications": [
+    {
+      "Id": "7zip",
+      "Name": "7-Zip",
+      "WingetId": "7zip.7zip"
+    },
+    {
+      "Id": "firefox",
+      "Name": "Mozilla Firefox",
+      "WingetId": "Mozilla.Firefox"
+    },
+    {
+      "Id": "chrome",
+      "Name": "Google Chrome",
+      "WingetId": "Google.Chrome"
+    }
+  ]
 }

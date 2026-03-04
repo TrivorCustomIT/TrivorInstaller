@@ -1,12 +1,20 @@
 ﻿{
-  "Client": {
-    "Id": "duopartners",
-    "Name": "DUOPARTNERS",
-    "Environment": "Production"
-  },
-  "InstallerMode": {
-    "Compliance": true,
-    "ZeroTouch": false
-  },
-  "Applications": []
+ "Client": "DUOPARTNERS",
+  "Applications": [
+    {
+      "Id": "7zip",
+      "Name": "7-Zip",
+      "WingetId": "7zip.7zip"
+    },
+    {
+      "Id": "firefox",
+      "Name": "Mozilla Firefox",
+      "WingetId": "Mozilla.Firefox"
+    },
+    {
+      "Id": "chrome",
+      "Name": "Google Chrome",
+      "WingetId": "Google.Chrome"
+    }
+  ]
 }
