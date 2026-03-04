@@ -1,13 +1,5 @@
 ﻿{
-  "Client": {
-    "Id": "arapyau",
-    "Name": "ARAPYAU",
-    "Environment": "Production"
-  },
-  "InstallerMode": {
-    "Compliance": true,
-    "ZeroTouch": false
-  },
+ "Client": "AARAPYAU",
   "Applications": [
     {
       "Id": "rmm-agent",
