@@ -8,5 +8,28 @@
     "Compliance": true,
     "ZeroTouch": false
   },
-  "Applications": []
+  "Applications": [
+    {
+      "Id": "rmm-agent",
+      "Name": "Trivor RMM Agent",
+      "Detection": {
+        "Method": "Hybrid",
+        "RegistryDisplayName": "Advanced Monitoring Agent",
+        "MinVersion": "10.14.4",
+        "ServiceName": "Advanced Monitoring Agent",
+        "ServiceDisplayName": "Advanced Monitoring Agent"
+      },
+      "Install": {
+        "Method": "RepoExePublic",
+        "Owner": "TrivorCustomIT",
+        "Repo": "TrivorInstallerRepository",
+        "Branch": "main",
+        "RelativePath": "Installers/clients/arapyau/rmm/AGENT_275000_V10_14_4_RW.EXE",
+        "SilentArgs": "/silent /norestart",
+        "CacheFileName": "AGENT_275000_V10_14_4_RW.EXE",
+        "Sha256": "C60374E800E83588FF9F75577DEACFCBF8425F96F3BEB807E7C010CAAC2EC22A",
+        "CleanAfterInstall": true
+      }
+    },
+  ]
 }
