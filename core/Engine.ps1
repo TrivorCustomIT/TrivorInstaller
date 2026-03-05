@@ -334,8 +334,8 @@ function Invoke-AppActionManual {
     Write-Host ""
     Write-Host "-----------------------------------"
     Write-Host "App: $($App.Name)"
-    Write-Host ("Installed: {0}" -f $installed)
-    if ($state.Source)  { Write-Host ("Source: {0}"  -f $state.Source) }
+    Write-Host ("Instalado : {0}" -f $installed)
+    if ($state.Source)  { Write-Host ("Fonte : {0}"  -f $state.Source) }
     if ($state.Version) { Write-Host ("Version: {0}" -f $state.Version) }
     Write-Host "-----------------------------------"
 
