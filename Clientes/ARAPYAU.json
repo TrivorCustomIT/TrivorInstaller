@@ -65,6 +65,24 @@
         "Sha256": "",
         "CleanAfterInstall": true
       }
+    },
+    {
+      "Id": "Kaspersky",
+      "Name": "Kaspersky Endpoint Security for Business",
+      "Detection": {
+        "Method": "Hybrid",
+        "RegistryDisplayName": "Kaspersky Endpoint Security for Business",
+        "ServiceName": "Kaspersky Endpoint Security for Business",
+        "ServiceDisplayName": "Kaspersky Endpoint Security for Business"
+      },
+      "Install": {
+        "Method": "UrlExe",
+        "Url": "https://s242.cloud.kaspersky.com:8080/getPackage?vServerName=a5ca2440-f5c6-48dc-b570-51bf7e1e5812",
+        "SilentArgs": "/silent",
+        "CacheFileName": "Kaspersky Endpoint Security for Windows (12.9.0) (12.9.0.384).exe",
+        "Sha256": "",
+        "CleanAfterInstall": true
+      }
     }
   ]
 }

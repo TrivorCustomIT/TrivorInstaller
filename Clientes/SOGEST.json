@@ -15,6 +15,74 @@
       "Id": "chrome",
       "Name": "Google Chrome",
       "WingetId": "Google.Chrome"
+    },
+    {
+      "Id": "adobe-reader",
+      "Name": "Adobe Reader DC (64-bit)",
+      "WingetId": "Adobe.Acrobat.Reader.64-bit"
+    },
+    {
+      "Id": "zoom",
+      "Name": "Zoom Workplace",
+      "WingetId": "Zoom.Zoom"
+    },
+    {
+      "Id": "`kaspersky`",
+      "Name": "Kaspersky Endpoint Security for Business",
+      "Detection": {
+        "Method": "Hybrid",
+        "RegistryDisplayName": "Kaspersky Endpoint Security for Business",
+        "ServiceName": "Kaspersky Endpoint Security for Business",
+        "ServiceDisplayName": "Kaspersky Endpoint Security for Business"
+      },
+      "Install": {
+        "Method": "UrlExe",
+        "Url": "https://s007.cloud.kaspersky.com:8080/getPackage?vServerName=13058253-1595-4ded-97db-934fffdb55ad",
+        "SilentArgs": "/silent",
+        "CacheFileName": "Kaspersky Endpoint Security for Windows (12.10.0) (12.10.0.466).exe",
+        "Sha256": "",
+        "CleanAfterInstall": true
+      }
+    },
+    {
+      "Id": "rmm-agent",
+      "Name": "Trivor RMM Agent",
+      "Detection": {
+        "Method": "Hybrid",
+        "RegistryDisplayName": "Advanced Monitoring Agent",
+        "MinVersion": "10.14.4",
+        "ServiceName": "Advanced Monitoring Agent",
+        "ServiceDisplayName": "Advanced Monitoring Agent"
+      },
+      "Install": {
+        "Method": "RepoExePublic",
+        "Owner": "TrivorCustomIT",
+        "Repo": "TrivorInstallerRepository",
+        "Branch": "main",
+        "RelativePath": "Installers/clients/arapyau/rmm/AGENT_453519_V10_14_4_RW.EXE",
+        "SilentArgs": "/silent /norestart",
+        "CacheFileName": "AGENT_453519_V10_14_4_RW.EXE",
+        "Sha256": "C60374E800E83588FF9F75577DEACFCBF8425F96F3BEB807E7C010CAAC2EC22A",
+        "CleanAfterInstall": true
+      }
+    },
+    {
+      "Id": "takecontrol",
+      "Name": "Take Control Agent",
+      "Detection": {
+        "Method": "Hybrid",
+        "RegistryDisplayName": "Agente Take Control",
+        "ServiceName": "Agente Take Control",
+        "ServiceDisplayName": "Agente Take Control"
+      },
+      "Install": {
+        "Method": "UrlExe",
+        "Url": "https://api.us0.swi-rc.com/download/getpcinstall.php?iid=6d29808a-188d-11f1-b22b-0affd1392461",
+        "SilentArgs": "/silent",
+        "CacheFileName": "TakeControlAgent.exe",
+        "Sha256": "",
+        "CleanAfterInstall": true
+      }
     }
   ]
 }
