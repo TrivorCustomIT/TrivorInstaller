@@ -100,7 +100,7 @@ function Install-WingetApp {
 
     Write-Log "Installing via Winget: $WingetId" "INFO"
     try {
-        winget install --id $WingetId --exact --silent --accept-package-agreements --accept-source-agreements
+        winget install --id $WingetId --exact --silent --source winget --accept-package-agreements --accept-source-agreements
         return $true
     } catch {
         Write-Log "Winget install failed: $WingetId" "ERROR"
