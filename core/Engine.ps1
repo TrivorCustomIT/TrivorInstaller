@@ -90,8 +90,9 @@ function Ensure-DownloadedWithSha256 {
 #region Winget
 function Initialize-Winget {
     Write-Log "Initializing winget..." "INFO"
-    try { winget source update --accept-source-agreements 2>$null | Out-Null } catch {}
-    try { winget list --accept-source-agreements 2>$null | Out-Null } catch {}
+    try { winget source reset --force *>$null } catch {}
+    try { winget source remove msstore *>$null } catch {}
+    try { winget source update --accept-source-agreements *>$null } catch {}
     Write-Log "Winget ready." "INFO"
 }
 
@@ -113,7 +114,7 @@ function Update-WingetApp {
 
     Write-Log "Updating via Winget: $WingetId" "INFO"
     try {
-        winget upgrade --id $WingetId --exact --silent --accept-package-agreements --accept-source-agreements
+        winget upgrade --id $WingetId --exact --silent --source winget --accept-package-agreements --accept-source-agreements
         return $true
     } catch {
         Write-Log "Winget upgrade failed: $WingetId" "WARN"
@@ -124,7 +125,7 @@ function Update-WingetApp {
 function Upgrade-WingetAll {
     Write-Log "Running: winget upgrade --all" "INFO"
     try {
-        winget upgrade --all --silent --accept-package-agreements --accept-source-agreements
+        winget upgrade --all --silent --source winget --accept-package-agreements --accept-source-agreements
         return $true
     } catch {
         Write-Log "winget upgrade --all failed" "WARN"
