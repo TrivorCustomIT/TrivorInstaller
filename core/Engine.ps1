@@ -101,7 +101,7 @@ function Install-WingetApp {
 
     Write-Log "Installing via Winget: $WingetId" "INFO"
     try {
-        winget install --id $WingetId --exact --source winget
+        winget install --id $WingetId --source winget
         return $true
     } catch {
         Write-Log "Winget install failed: $WingetId" "ERROR"
@@ -114,7 +114,7 @@ function Update-WingetApp {
 
     Write-Log "Updating via Winget: $WingetId" "INFO"
     try {
-        winget upgrade --id $WingetId --exact  --source winget
+        winget upgrade --id $WingetId --source winget
         return $true
     } catch {
         Write-Log "Winget upgrade failed: $WingetId" "WARN"
