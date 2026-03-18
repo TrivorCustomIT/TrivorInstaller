@@ -22,6 +22,11 @@
       "WingetId": "Adobe.Acrobat.Reader.64-bit"
     },
     {
+      "Id": "anydesk",
+      "Name": "AnyDesk",
+      "WingetId": "AnyDesk.AnyDesk"
+    },
+    {
       "Id": "rmm-agent",
       "Name": "Trivor RMM Agent",
       "Detection": {
