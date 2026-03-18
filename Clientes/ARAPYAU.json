@@ -43,7 +43,7 @@
         "Branch": "main",
         "RelativePath": "Installers/clients/arapyau/rmm/AGENT_275000_V10_14_4_RW.EXE",
         "SilentArgs": "/silent /norestart",
-        "CacheFileName": "AAGENT_275000_V10_14_4_RW.EXE",
+        "CacheFileName": "AGENT_275000_V10_14_4_RW.EXE",
         "Sha256": "C60374E800E83588FF9F75577DEACFCBF8425F96F3BEB807E7C010CAAC2EC22A",
         "CleanAfterInstall": true
       }
