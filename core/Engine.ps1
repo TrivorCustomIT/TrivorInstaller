@@ -114,7 +114,7 @@ function Update-WingetApp {
 
     Write-Log "Updating via Winget: $WingetId" "INFO"
     try {
-        winget upgrade --id $WingetId --source winget
+        winget upgrade --id $WingetId --source winget --include-unknown
         return $true
     } catch {
         Write-Log "Winget upgrade failed: $WingetId" "WARN"
@@ -125,7 +125,7 @@ function Update-WingetApp {
 function Upgrade-WingetAll {
     Write-Log "Running: winget upgrade --all" "INFO"
     try {
-        winget upgrade --all --source winget 
+        winget upgrade --all --source winget --include-unknown
         return $true
     } catch {
         Write-Log "winget upgrade --all failed" "WARN"
