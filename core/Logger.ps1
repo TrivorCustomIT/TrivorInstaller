@@ -3,9 +3,6 @@ function Initialize-Logger {
 }
 
 function Write-Log {
-    param (
-        [string]$Message,
-        [string]$Level = "INFO"
-    )
+    param([string]$Message, [string]$Level = "INFO")
     Write-Host "[$Level] $Message"
 }

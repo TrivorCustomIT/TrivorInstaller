@@ -18,7 +18,7 @@ function Get-ClientList {
         return @()
     }
 
-    $files = Get-ChildItem $clientsPath -Filter *.json | Where-Object { $_.Name -ne "_manifest.json" } | Sort-Object Name
+    $files = Get-ChildItem $clientsPath -Filter *.json | Sort-Object Name
     return $files | ForEach-Object { [System.IO.Path]::GetFileNameWithoutExtension($_.Name) }
 }
 
@@ -38,7 +38,7 @@ function Get-ClientConfigByName {
         return $content | ConvertFrom-Json -ErrorAction Stop
     } catch {
         Write-Host ""
-        Write-Host "[ERROR] Falha ao ler JSON do cliente ${ClientName}:" -ForegroundColor Red
+        Write-Host "[ERROR] Falha ao ler JSON do cliente '${ClientName}':" -ForegroundColor Red
         Write-Host $_.Exception.Message -ForegroundColor Red
         Write-Host "Arquivo: $file" -ForegroundColor Yellow
         Write-Host ""
@@ -47,14 +47,14 @@ function Get-ClientConfigByName {
     }
 }
 
-function Show-ClientSubMenu {
+function Show-ClientMenu {
     param([Parameter(Mandatory)] [string]$ClientName)
 
     while ($true) {
         Clear-Host
         Show-Banner
 
-        Write-Host "Cliente: $ClientName"
+        Write-Host "Cliente: $ClientName" -ForegroundColor Cyan
         Write-Host ""
         Write-Host "1 - Modo automatico (instalar tudo)"
         Write-Host "2 - Modo manual (confirmar cada app)"
@@ -67,16 +67,12 @@ function Show-ClientSubMenu {
         if ($choice -eq "4") { return }
 
         $cfg = Get-ClientConfigByName -ClientName $ClientName
-        if (-not $cfg) {
-            Write-Host "Configuracao do cliente nao encontrada."
-            Wait-Enter
-            return
-        }
+        if (-not $cfg) { return }
 
         if ($choice -eq "1") {
             Invoke-ClientInstallation -ClientConfig $cfg
             Write-Host ""
-            Write-Host "Concluido."
+            Write-Host "Concluido." -ForegroundColor Green
             Wait-Enter
             continue
         }
@@ -84,7 +80,7 @@ function Show-ClientSubMenu {
         if ($choice -eq "2") {
             Invoke-ClientManualInstall -ClientConfig $cfg
             Write-Host ""
-            Write-Host "Concluido."
+            Write-Host "Concluido." -ForegroundColor Green
             Wait-Enter
             continue
         }
@@ -92,14 +88,46 @@ function Show-ClientSubMenu {
         if ($choice -eq "3") {
             Invoke-ClientUpdateOnly -ClientConfig $cfg
             Write-Host ""
-            Write-Host "Concluido."
+            Write-Host "Concluido." -ForegroundColor Green
             Wait-Enter
             continue
         }
 
-        Write-Host "Opcao invalida."
+        Write-Host "Opcao invalida." -ForegroundColor Red
         Wait-Enter
     }
+}
+
+function Show-ClientGrid {
+    param([Parameter(Mandatory)] [array]$Clients)
+
+    $cols      = 3
+    $termWidth = $Host.UI.RawUI.WindowSize.Width
+    $colWidth  = [math]::Floor(($termWidth - 4) / $cols)
+
+    $total = $clients.Count
+    $rows  = [math]::Ceiling($total / $cols)
+
+    Write-Host "Selecione um cliente:" -ForegroundColor Cyan
+    Write-Host ""
+
+    for ($row = 0; $row -lt $rows; $row++) {
+        $line = ""
+        for ($col = 0; $col -lt $cols; $col++) {
+            $idx = $row + ($col * $rows)
+            if ($idx -lt $total) {
+                $num  = $idx + 1
+                $name = $clients[$idx]
+                $cell = "[{0,2}] {1}" -f $num, $name
+                $line += $cell.PadRight($colWidth)
+            }
+        }
+        Write-Host $line
+    }
+
+    Write-Host ""
+    Write-Host "  [0] Sair" -ForegroundColor DarkGray
+    Write-Host ""
 }
 
 function Start-MainMenu {
@@ -109,25 +137,12 @@ function Start-MainMenu {
 
         $clients = Get-ClientList
         if ($clients.Count -eq 0) {
-            Write-Host "Nenhum cliente encontrado na pasta Clientes."
+            Write-Host "Nenhum cliente encontrado na pasta Clientes." -ForegroundColor Red
             Wait-Enter
             return
         }
 
-        Write-Host "Selecione um cliente:"
-        Write-Host ""
-
-        $map = @{}
-        $i = 1
-        foreach ($c in $clients) {
-            Write-Host ("[{0}] {1}" -f $i, $c)
-            $map[$i] = $c
-            $i++
-        }
-
-        Write-Host ""
-        Write-Host "[0] Sair"
-        Write-Host ""
+        Show-ClientGrid -Clients $clients
 
         $choice = Read-Host "Digite o numero"
 
@@ -137,12 +152,13 @@ function Start-MainMenu {
         }
 
         $num = 0
-        if (-not [int]::TryParse($choice, [ref]$num) -or -not $map.ContainsKey($num)) {
-            Write-Host "Opcao invalida."
+        if (-not [int]::TryParse($choice, [ref]$num) -or $num -lt 1 -or $num -gt $clients.Count) {
+            Write-Host "Opcao invalida." -ForegroundColor Red
             Wait-Enter
             continue
         }
 
-        Show-ClientSubMenu -ClientName $map[$num]
+        $selected = $clients[$num - 1]
+        Show-ClientMenu -ClientName $selected
     }
 }

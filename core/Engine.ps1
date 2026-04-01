@@ -1,8 +1,5 @@
 # ==============================
 # Trivor Installer - Engine.ps1
-# Supports: AUTO, MANUAL
-# Install methods: Winget, RepoExePublic (raw) with SHA256 validation and retry
-# Reinstall rule: if Registry version < MinVersion -> reinstall
 # ==============================
 
 #region Download - Public Repo (raw)
@@ -28,15 +25,10 @@ function Get-PublicRepoFile {
 }
 #endregion
 
-#region SHA256 helpers
+#region SHA256
 function Get-FileSha256 {
     param([Parameter(Mandatory)] [string]$Path)
-
-    try {
-        return (Get-FileHash -Path $Path -Algorithm SHA256).Hash.ToUpper()
-    } catch {
-        return $null
-    }
+    try { return (Get-FileHash -Path $Path -Algorithm SHA256).Hash.ToUpper() } catch { return $null }
 }
 
 function Ensure-DownloadedWithSha256 {
@@ -53,7 +45,6 @@ function Ensure-DownloadedWithSha256 {
     $expected = $ExpectedSha256.ToUpper()
 
     for ($i = 1; $i -le $MaxAttempts; $i++) {
-
         if (Test-Path $DestinationFile) {
             $current = Get-FileSha256 -Path $DestinationFile
             if ($current -and $current -eq $expected) {
@@ -65,11 +56,7 @@ function Ensure-DownloadedWithSha256 {
         }
 
         Write-Log "Downloading attempt ${i}: $RelativePath" "INFO"
-
-        $ok = Get-PublicRepoFile `
-            -Owner $Owner -Repo $Repo -Branch $Branch `
-            -RelativePath $RelativePath -DestinationFile $DestinationFile
-
+        $ok = Get-PublicRepoFile -Owner $Owner -Repo $Repo -Branch $Branch -RelativePath $RelativePath -DestinationFile $DestinationFile
         if (-not $ok) { continue }
 
         $hash = Get-FileSha256 -Path $DestinationFile
@@ -87,7 +74,40 @@ function Ensure-DownloadedWithSha256 {
 }
 #endregion
 
-#region Winget
+#region Winget - roda no contexto do usuario logado via Scheduled Task
+function Invoke-WingetAsUser {
+    param([string]$Arguments)
+
+    $loggedUser = (Get-CimInstance Win32_ComputerSystem).UserName
+
+    if (-not $loggedUser) {
+        Write-Log "Nenhum usuario logado. Rodando winget como Admin." "WARN"
+        try { Invoke-Expression "winget $Arguments *>$null" } catch {}
+        return
+    }
+
+    $taskName = "TrivorWinget_$(Get-Random)"
+    $action   = New-ScheduledTaskAction -Execute "winget" -Argument $Arguments
+    $trigger  = New-ScheduledTaskTrigger -Once -At (Get-Date).AddSeconds(2)
+    $principal = New-ScheduledTaskPrincipal -UserId $loggedUser -LogonType Interactive -RunLevel Limited
+
+    try {
+        Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Force | Out-Null
+        Start-ScheduledTask -TaskName $taskName
+
+        $timeout = 300
+        $elapsed = 0
+        do {
+            Start-Sleep -Seconds 3
+            $elapsed += 3
+            $state = (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue).State
+        } while ($state -eq "Running" -and $elapsed -lt $timeout)
+
+    } finally {
+        Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue | Out-Null
+    }
+}
+
 function Initialize-Winget {
     Write-Log "Initializing winget..." "INFO"
     try { winget source reset --force *>$null } catch {}
@@ -101,7 +121,7 @@ function Install-WingetApp {
 
     Write-Log "Installing via Winget: $WingetId" "INFO"
     try {
-        winget install --id $WingetId --source winget --accept-package-agreements --accept-source-agreements
+        Invoke-WingetAsUser -Arguments "install --id $WingetId --source winget --silent --accept-package-agreements --accept-source-agreements"
         return $true
     } catch {
         Write-Log "Winget install failed: $WingetId" "ERROR"
@@ -114,7 +134,7 @@ function Update-WingetApp {
 
     Write-Log "Updating via Winget: $WingetId" "INFO"
     try {
-        winget upgrade --id $WingetId --source winget --include-unknown --accept-package-agreements --accept-source-agreements
+        Invoke-WingetAsUser -Arguments "upgrade --id $WingetId --source winget --silent --include-unknown --accept-package-agreements --accept-source-agreements"
         return $true
     } catch {
         Write-Log "Winget upgrade failed: $WingetId" "WARN"
@@ -125,7 +145,7 @@ function Update-WingetApp {
 function Upgrade-WingetAll {
     Write-Log "Running: winget upgrade --all" "INFO"
     try {
-        winget upgrade --all --source winget --include-unknown --accept-package-agreements --accept-source-agreements
+        Invoke-WingetAsUser -Arguments "upgrade --all --source winget --silent --include-unknown --accept-package-agreements --accept-source-agreements"
         return $true
     } catch {
         Write-Log "winget upgrade --all failed" "WARN"
@@ -144,7 +164,7 @@ function Install-Application {
         return
     }
 
-    # 2) Public repo EXE
+    # 2) RepoExePublic
     if ($App.PSObject.Properties.Match("Install").Count -gt 0 -and $App.Install -and $App.Install.Method -eq "RepoExePublic") {
 
         $cacheRoot = Join-Path $env:TEMP "TrivorInstaller\cache"
@@ -169,7 +189,6 @@ function Install-Application {
         if (-not $ok) { return }
 
         Write-Log "Executing installer: $localFile" "INFO"
-
         $installArgs = if ($App.Install.SilentArgs) { $App.Install.SilentArgs } else { "" }
         Start-Process -FilePath $localFile -ArgumentList $installArgs -Wait -NoNewWindow
 
@@ -177,11 +196,10 @@ function Install-Application {
             try { Remove-Item $localFile -Force -ErrorAction SilentlyContinue } catch {}
             Write-Log "Cache cleaned: $localFile" "INFO"
         }
-
         return
     }
 
-    # 3) Public URL EXE
+    # 3) UrlExe
     if ($App.PSObject.Properties.Match("Install").Count -gt 0 -and $App.Install -and $App.Install.Method -eq "UrlExe") {
 
         $cacheRoot = Join-Path $env:TEMP "TrivorInstaller\cache"
@@ -195,13 +213,9 @@ function Install-Application {
         if ($hasHash) {
             $expected = $App.Install.Sha256.ToUpper()
 
-            # Use cached file if hash matches
             if (Test-Path $localFile) {
                 $current = Get-FileSha256 -Path $localFile
-                if ($current -and $current -eq $expected) {
-                    Write-Log "SHA256 OK (cached): $localFile" "INFO"
-                } else {
-                    Write-Log "SHA256 mismatch in cache. Re-downloading." "WARN"
+                if (-not ($current -and $current -eq $expected)) {
                     try { Remove-Item $localFile -Force -ErrorAction SilentlyContinue } catch {}
                 }
             }
@@ -223,9 +237,7 @@ function Install-Application {
                 }
                 Write-Log "SHA256 OK: $localFile" "INFO"
             }
-
         } else {
-            # No hash — just download
             Write-Log "Downloading (UrlExe, no hash): $($App.Install.Url)" "INFO"
             try {
                 Invoke-WebRequest -Uri $App.Install.Url -OutFile $localFile -UseBasicParsing -ErrorAction Stop
@@ -243,7 +255,6 @@ function Install-Application {
             try { Remove-Item $localFile -Force -ErrorAction SilentlyContinue } catch {}
             Write-Log "Cache cleaned: $localFile" "INFO"
         }
-
         return
     }
 
@@ -253,10 +264,7 @@ function Install-Application {
 
 #region Actions
 function Should-ForceReinstallByVersion {
-    param(
-        [Parameter(Mandatory)] $App,
-        [Parameter(Mandatory)] $State
-    )
+    param([Parameter(Mandatory)] $App, [Parameter(Mandatory)] $State)
 
     if (-not $App.Detection) { return $false }
     if (-not $App.Detection.MinVersion) { return $false }
@@ -270,7 +278,6 @@ function Should-ForceReinstallByVersion {
     } catch {
         Write-Log "Version compare failed. Skipping forced reinstall." "WARN"
     }
-
     return $false
 }
 
@@ -284,42 +291,32 @@ function Invoke-AppAction {
     $installed = [bool]$state.Installed
     $hasWinget = ($App.PSObject.Properties.Match("WingetId").Count -gt 0 -and $App.WingetId)
 
-    # Force reinstall if version is below minimum required
     if ($installed -and (Should-ForceReinstallByVersion -App $App -State $state)) {
         $installed = $false
     }
 
     if ($installed) {
         Write-Log "$($App.Name) already installed. Checking for updates..." "INFO"
-
         if ($hasWinget) {
             if ($Mode -eq "Manual") {
                 $choice = Read-Host "Update $($App.Name) via Winget? (Y/N)"
-                if ($choice -match "^(Y|y)$") {
-                    Update-WingetApp -WingetId $App.WingetId | Out-Null
-                } else {
-                    Write-Log "Skipped update: $($App.Name)" "INFO"
-                }
+                if ($choice -match "^(Y|y)$") { Update-WingetApp -WingetId $App.WingetId | Out-Null }
+                else { Write-Log "Skipped update: $($App.Name)" "INFO" }
             } else {
                 Update-WingetApp -WingetId $App.WingetId | Out-Null
             }
         } else {
             Write-Log "No WingetId for update: $($App.Name)" "INFO"
         }
-
         return
     }
 
-    # Not installed -> install
     Write-Log "$($App.Name) not installed." "INFO"
 
     if ($Mode -eq "Manual") {
         $choice = Read-Host "Install $($App.Name)? (Y/N)"
-        if ($choice -match "^(Y|y)$") {
-            Install-Application -App $App
-        } else {
-            Write-Log "Skipped install: $($App.Name)" "INFO"
-        }
+        if ($choice -match "^(Y|y)$") { Install-Application -App $App }
+        else { Write-Log "Skipped install: $($App.Name)" "INFO" }
     } else {
         Install-Application -App $App
     }
@@ -335,8 +332,8 @@ function Invoke-AppActionManual {
     Write-Host ""
     Write-Host "-----------------------------------"
     Write-Host "App: $($App.Name)"
-    Write-Host ("Instalado : {0}" -f $installed)
-    if ($state.Source)  { Write-Host ("Fonte : {0}"  -f $state.Source) }
+    Write-Host ("Installed: {0}" -f $installed)
+    if ($state.Source)  { Write-Host ("Source: {0}"  -f $state.Source) }
     if ($state.Version) { Write-Host ("Version: {0}" -f $state.Version) }
     Write-Host "-----------------------------------"
 
@@ -351,7 +348,6 @@ function Invoke-AppActionManual {
             return "CONTINUE"
         }
         if ($choice -match "^(Q|q)$") { return "QUIT" }
-
         Write-Log "Skipped: $($App.Name)" "INFO"
         return "CONTINUE"
     }
@@ -366,7 +362,6 @@ function Invoke-AppActionManual {
         return "CONTINUE"
     }
     if ($choice -match "^(Q|q)$") { return "QUIT" }
-
     Write-Log "Skipped: $($App.Name)" "INFO"
     return "CONTINUE"
 }
@@ -402,22 +397,6 @@ function Invoke-ClientUpdateOnly {
     }
 
     Write-Log "Finished UPDATE ONLY mode for client: $($ClientConfig.Client)" "INFO"
-}
-
-function Invoke-ClientComplianceInstall {
-    param([Parameter(Mandatory)] [psobject]$ClientConfig)
-
-    Initialize-Winget
-    Write-Log "Starting COMPLIANCE mode for client: $($ClientConfig.Client)" "INFO"
-
-    foreach ($app in $ClientConfig.Applications) {
-        Write-Log "Processing: $($app.Name)" "INFO"
-        Invoke-AppAction -App $app -Mode "Auto"
-    }
-
-    Upgrade-WingetAll | Out-Null
-
-    Write-Log "Finished COMPLIANCE mode for client: $($ClientConfig.Client)" "INFO"
 }
 
 function Invoke-ClientManualInstall {
