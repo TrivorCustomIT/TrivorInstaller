@@ -1,9 +1,12 @@
-# --- Auto-elevacao ---
+# --- Auto-elevacao compativel com irm | iex ---
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
 if (-not $isAdmin) {
     Write-Host "Elevando privilegios..."
-    Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs
+    $tempScript = Join-Path $env:TEMP "TrivorLauncher.ps1"
+    $url = "https://raw.githubusercontent.com/TrivorCustomIT/TrivorInstaller/main/Install.ps1"
+    Invoke-WebRequest -Uri $url -OutFile $tempScript -UseBasicParsing
+    Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$tempScript`"" -Verb RunAs
     exit
 }
 
