@@ -1,3 +1,12 @@
+# --- Auto-elevacao ---
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+
+if (-not $isAdmin) {
+    Write-Host "Elevando privilegios..."
+    Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs
+    exit
+}
+
 Write-Host "Trivor Installer iniciado"
 
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
@@ -26,7 +35,7 @@ try {
 
     $Owner  = "TrivorCustomIT"
     $Repo   = "TrivorInstaller"
-    $Branch = "dev"  #Branch de desenvolvimento para testes, mudar para "main" ou "dev" para produção
+    $Branch = "dev"
 
     $CoreBaseRaw = "https://raw.githubusercontent.com/$Owner/$Repo/$Branch/core"
 
@@ -37,6 +46,7 @@ try {
         "Banner.ps1",
         "Detection.ps1",
         "Engine.ps1",
+        "Hostname.ps1",
         "Menu.ps1"
     )
 
@@ -63,7 +73,7 @@ try {
     try {
         $items = Invoke-RestMethod -Uri $ClientsApi -Headers $Headers -ErrorAction Stop
         foreach ($it in $items) {
-            if ($it.type -eq "file" -and $it.name -like "*.json") {
+            if ($it.type -eq "file" -and $it.name -like "*.json" -and $it.name -ne "_manifest.json") {
                 $dest = Join-Path $ClientsPath $it.name
                 Invoke-WebRequest -Uri $it.download_url -OutFile $dest -UseBasicParsing
                 $downloadedAny = $true
@@ -71,7 +81,6 @@ try {
         }
     } catch {
         Write-Host "ERROR: Failed to download client list from GitHub API."
-        Write-Host "Check if the 'Clientes' folder exists in the repo and the API is accessible."
         exit 1
     }
 
@@ -86,6 +95,7 @@ try {
     . "$CorePath\Banner.ps1"
     . "$CorePath\Detection.ps1"
     . "$CorePath\Engine.ps1"
+    . "$CorePath\Hostname.ps1"
     . "$CorePath\Menu.ps1"
 
     Initialize-Logger

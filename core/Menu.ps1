@@ -56,20 +56,22 @@ function Show-ClientMenu {
 
         Write-Host "Cliente: $ClientName" -ForegroundColor Cyan
         Write-Host ""
-        Write-Host "1 - Modo automatico (instalar tudo)"
+        Write-Host "1 - Modo automatico (renomear + instalar tudo)"
         Write-Host "2 - Modo manual (confirmar cada app)"
         Write-Host "3 - Update todos os programas (Winget)"
-        Write-Host "4 - Voltar ao menu principal"
+        Write-Host "4 - Renomear hostname"
+        Write-Host "5 - Voltar ao menu principal"
         Write-Host ""
 
         $choice = Read-Host "Selecione uma opcao"
 
-        if ($choice -eq "4") { return }
+        if ($choice -eq "5") { return }
 
         $cfg = Get-ClientConfigByName -ClientName $ClientName
         if (-not $cfg) { return }
 
         if ($choice -eq "1") {
+            Invoke-HostnameCheck -ClientConfig $cfg
             Invoke-ClientInstallation -ClientConfig $cfg
             Write-Host ""
             Write-Host "Concluido." -ForegroundColor Green
@@ -89,6 +91,13 @@ function Show-ClientMenu {
             Invoke-ClientUpdateOnly -ClientConfig $cfg
             Write-Host ""
             Write-Host "Concluido." -ForegroundColor Green
+            Wait-Enter
+            continue
+        }
+
+        if ($choice -eq "4") {
+            Invoke-HostnameCheck -ClientConfig $cfg
+            Write-Host ""
             Wait-Enter
             continue
         }
