@@ -26,7 +26,7 @@ try {
 
     $Owner  = "TrivorCustomIT"
     $Repo   = "TrivorInstaller"
-    $Branch = "main"
+    $Branch = "dev"  #Branch de desenvolvimento para testes, mudar para "main" ou "dev" para produção
 
     $CoreBaseRaw = "https://raw.githubusercontent.com/$Owner/$Repo/$Branch/core"
 
