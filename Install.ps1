@@ -38,7 +38,7 @@ try {
 
     $Owner  = "TrivorCustomIT"
     $Repo   = "TrivorInstaller"
-    $Branch = "dev"
+    $Branch = "main"
 
     $CoreBaseRaw = "https://raw.githubusercontent.com/$Owner/$Repo/$Branch/core"
 
