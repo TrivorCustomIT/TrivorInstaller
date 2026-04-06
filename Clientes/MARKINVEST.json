@@ -50,9 +50,9 @@
         "Id": "forticlient-vpn-config",
         "Name": "FortiClient VPN Config",
         "Detection": {
-          "Method": "Registry",
-          "DisplayName": "VPN Config"
-        },
+          "Method": "RegistryKey",
+          "KeyPath": "HKLM:\\SOFTWARE\\Fortinet\\FortiClient\\Sslvpn\\Tunnels\\MarkInvest"
+      },
         "Install": {
           "Method": "RegFile",
           "Owner": "TrivorCustomIT",
