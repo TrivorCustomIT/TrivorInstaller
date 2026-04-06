@@ -258,6 +258,47 @@ function Install-Application {
         return
     }
 
+
+    # 4) RegFile
+    if ($App.PSObject.Properties.Match("Install").Count -gt 0 -and $App.Install -and $App.Install.Method -eq "RegFile") {
+
+        $cacheRoot = Join-Path $env:TEMP "TrivorInstaller\cache"
+        New-Item -ItemType Directory -Force -Path $cacheRoot | Out-Null
+
+        $cacheFileName = if ($App.Install.CacheFileName) { $App.Install.CacheFileName } else { [System.IO.Path]::GetFileName($App.Install.RelativePath) }
+        $localFile = Join-Path $cacheRoot $cacheFileName
+
+        $ok = Get-PublicRepoFile `
+            -Owner $App.Install.Owner `
+            -Repo $App.Install.Repo `
+            -Branch $App.Install.Branch `
+            -RelativePath $App.Install.RelativePath `
+            -DestinationFile $localFile
+
+        if (-not $ok) {
+            Write-Log "Falha ao baixar .reg: $($App.Install.RelativePath)" "ERROR"
+            return
+        }
+
+        Write-Log "Aplicando registry: $localFile" "INFO"
+        try {
+            $result = Start-Process -FilePath "reg.exe" -ArgumentList "import `"$localFile`" /s" -Wait -NoNewWindow -PassThru
+            if ($result.ExitCode -eq 0) {
+                Write-Log "Registry aplicado com sucesso: $cacheFileName" "INFO"
+            } else {
+                Write-Log "reg import retornou codigo $($result.ExitCode)" "WARN"
+            }
+        } catch {
+            Write-Log "Erro ao aplicar registry: $_" "ERROR"
+        }
+
+        if ($App.Install.CleanAfterInstall -eq $true) {
+            try { Remove-Item $localFile -Force -ErrorAction SilentlyContinue } catch {}
+            Write-Log "Cache cleaned: $localFile" "INFO"
+        }
+        return
+    }
+
     Write-Log "No valid installation method for $($App.Name)" "ERROR"
 }
 #endregion
