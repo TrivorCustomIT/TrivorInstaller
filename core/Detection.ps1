@@ -106,6 +106,25 @@ function Test-ServiceApp {
 }
 #endregion
 
+
+#region RegistryKey
+function Test-RegistryKey {
+    param(
+        [Parameter(Mandatory)] [string]$KeyPath
+    )
+
+    try {
+        $key = Get-Item -Path $KeyPath -ErrorAction SilentlyContinue
+        if ($key) {
+            Write-Log "RegistryKey detected: $KeyPath" "INFO"
+            return $true
+        }
+    } catch {}
+
+    return $false
+}
+#endregion
+
 #region State
 function Get-ApplicationState {
     param([Parameter(Mandatory)] $App)
@@ -153,6 +172,16 @@ function Get-ApplicationState {
     if ($method -eq "Service") {
         if (Test-ServiceApp -ServiceName $d.ServiceName -DisplayName $d.ServiceDisplayName) {
             $state.Installed = $true; $state.Source = "Service"
+        }
+        return $state
+    }
+
+
+    # 7) RegistryKey — verifica existencia de uma chave de registry
+    if ($method -eq "RegistryKey" -and $d.KeyPath) {
+        if (Test-RegistryKey -KeyPath $d.KeyPath) {
+            $state.Installed = $true
+            $state.Source    = "RegistryKey"
         }
         return $state
     }

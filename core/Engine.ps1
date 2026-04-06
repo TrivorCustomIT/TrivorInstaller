@@ -259,7 +259,7 @@ function Install-Application {
     }
 
 
-    # 4) RegFile 24
+    # 4) RegFile
     if ($App.PSObject.Properties.Match("Install").Count -gt 0 -and $App.Install -and $App.Install.Method -eq "RegFile") {
 
         $cacheRoot = Join-Path $env:TEMP "TrivorInstaller\cache"
@@ -280,9 +280,23 @@ function Install-Application {
             return
         }
 
+        # Garante encoding UTF-16 LE com BOM (exigido pelo reg import)
+        try {
+            $rawBytes = [System.IO.File]::ReadAllBytes($localFile)
+            $hasUtf16Bom = ($rawBytes.Length -ge 2 -and $rawBytes[0] -eq 0xFF -and $rawBytes[1] -eq 0xFE)
+
+            if (-not $hasUtf16Bom) {
+                Write-Log "Convertendo .reg para UTF-16 LE..." "INFO"
+                $text = [System.IO.File]::ReadAllText($localFile, [System.Text.Encoding]::UTF8)
+                [System.IO.File]::WriteAllText($localFile, $text, [System.Text.Encoding]::Unicode)
+            }
+        } catch {
+            Write-Log "Aviso: nao foi possivel verificar encoding do .reg: $_" "WARN"
+        }
+
         Write-Log "Aplicando registry: $localFile" "INFO"
         try {
-            $result = Start-Process -FilePath "reg.exe" -ArgumentList "import `"$localFile`" /s" -Wait -NoNewWindow -PassThru
+            $result = Start-Process -FilePath "reg.exe" -ArgumentList "import `"$localFile`"" -Wait -NoNewWindow -PassThru
             if ($result.ExitCode -eq 0) {
                 Write-Log "Registry aplicado com sucesso: $cacheFileName" "INFO"
             } else {

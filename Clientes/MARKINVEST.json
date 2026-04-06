@@ -1,6 +1,6 @@
-﻿{
- "Client": "MARKINVEST",
- "HostnamePrefix": "MKS",
+{
+  "Client": "MARKINVEST",
+  "HostnamePrefix": "MKS",
   "Applications": [
     {
       "Id": "7zip",
@@ -28,8 +28,7 @@
       "WingetId": "AnyDesk.AnyDesk"
     },
     {
-
-     "Id": "FortiClient VPN",
+      "Id": "forticlient-vpn",
       "Name": "FortiClient VPN",
       "Detection": {
         "Method": "Hybrid",
@@ -43,24 +42,24 @@
         "SilentArgs": "/silent",
         "CacheFileName": "FortiClientVPNInstaller.exe",
         "Sha256": "",
-        "CleanAfterInstall": true     
+        "CleanAfterInstall": true
       }
     },
     {
-        "Id": "forticlient-vpn-config",
-        "Name": "FortiClient VPN Config",
-        "Detection": {
-          "Method": "RegistryKey",
-          "KeyPath": "HKLM:\\SOFTWARE\\Fortinet\\FortiClient\\Sslvpn\\Tunnels\\MarkInvest"
+      "Id": "forticlient-vpn-config",
+      "Name": "FortiClient VPN Config (MarkInvest)",
+      "Detection": {
+        "Method": "RegistryKey",
+        "KeyPath": "HKLM:\\SOFTWARE\\Fortinet\\FortiClient\\Sslvpn\\Tunnels\\MarkInvest"
       },
-        "Install": {
-          "Method": "RegFile",
-          "Owner": "TrivorCustomIT",
-          "Repo": "TrivorInstallerRepository",
-          "Branch": "main",
-          "RelativePath": "Installers/clients/markinvest/markinvest_ssl_vpn.reg",
-          "CleanAfterInstall": true
-        }
+      "Install": {
+        "Method": "RegFile",
+        "Owner": "TrivorCustomIT",
+        "Repo": "TrivorInstallerRepository",
+        "Branch": "main",
+        "RelativePath": "Installers/clients/markinvest/markinvest_ssl_vpn.reg",
+        "CleanAfterInstall": true
+      }
     },
     {
       "Id": "rmm-agent",
