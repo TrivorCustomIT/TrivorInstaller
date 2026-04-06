@@ -28,10 +28,39 @@
       "WingetId": "AnyDesk.AnyDesk"
     },
     {
-      "Id": "forticlientvpn",
-      "Name": "FortiClient VPN",
-      "WingetId": "Fortinet.FortiClientVPN"
 
+     "Id": "FortiClient VPN",
+      "Name": "FortiClient VPN",
+      "Detection": {
+        "Method": "Hybrid",
+        "RegistryDisplayName": "FortiClient VPN",
+        "ServiceName": "FortiClient VPN",
+        "ServiceDisplayName": "FortiClient VPN"
+      },
+      "Install": {
+        "Method": "UrlExe",
+        "Url": "https://filestore.fortinet.com/forticlient/downloads/FortiClientVPNInstaller.exe",
+        "SilentArgs": "/silent",
+        "CacheFileName": "FortiClientVPNInstaller.exe",
+        "Sha256": "",
+        "CleanAfterInstall": true     
+      }
+    },
+    {
+        "Id": "forticlient-vpn-config",
+        "Name": "FortiClient VPN Config",
+        "Detection": {
+          "Method": "Registry",
+          "DisplayName": "FortiClient"
+        },
+        "Install": {
+          "Method": "RegFile",
+          "Owner": "TrivorCustomIT",
+          "Repo": "TrivorInstallerRepository",
+          "Branch": "main",
+          "RelativePath": "Installers/clients/markinvest/markinvest_ssl_vpn.reg",
+          "CleanAfterInstall": true
+        }
     },
     {
       "Id": "rmm-agent",
