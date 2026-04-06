@@ -28,6 +28,12 @@
       "WingetId": "AnyDesk.AnyDesk"
     },
     {
+      "Id": "forticlientvpn",
+      "Name": "FortiClient VPN",
+      "WingetId": "Fortinet.FortiClientVPN"
+
+    },
+    {
       "Id": "rmm-agent",
       "Name": "Trivor RMM Agent",
       "Detection": {

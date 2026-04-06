@@ -1,5 +1,6 @@
 ﻿{
  "Client": "ANK_REPUTATION",
+ "HostnamePrefix": "ANK",
   "Applications": [
     {
       "Id": "7zip",

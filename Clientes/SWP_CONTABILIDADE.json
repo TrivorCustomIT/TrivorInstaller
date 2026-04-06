@@ -1,5 +1,6 @@
 ﻿{
  "Client": "SWP_CONTABILIDADE",
+ "HostnamePrefix": "SW",
   "Applications": [
     {
       "Id": "7zip",
@@ -15,6 +16,11 @@
       "Id": "chrome",
       "Name": "Google Chrome",
       "WingetId": "Google.Chrome"
+    },
+    {
+      "Id": "Foxit-Reader",
+      "Name": "Foxit Reader",
+      "WingetId": "Foxit.FoxitReader"
     }
   ]
 }

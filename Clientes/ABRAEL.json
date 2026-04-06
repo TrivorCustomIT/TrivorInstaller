@@ -1,5 +1,6 @@
 ﻿{
  "Client": "ABRAEL",
+ "HostnamePrefix": "ABL",
   "Applications": [
     {
       "Id": "7zip",
