@@ -51,7 +51,7 @@
         "Name": "FortiClient VPN Config",
         "Detection": {
           "Method": "Registry",
-          "DisplayName": "FortiClient"
+          "DisplayName": "VPN Config"
         },
         "Install": {
           "Method": "RegFile",
