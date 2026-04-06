@@ -259,7 +259,7 @@ function Install-Application {
     }
 
 
-    # 4) RegFile
+    # 4) RegFile 
     if ($App.PSObject.Properties.Match("Install").Count -gt 0 -and $App.Install -and $App.Install.Method -eq "RegFile") {
 
         $cacheRoot = Join-Path $env:TEMP "TrivorInstaller\cache"
