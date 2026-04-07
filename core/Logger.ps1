@@ -20,7 +20,7 @@ function Initialize-Logger {
         New-Item -ItemType File -Path $global:TrivorLogFile -Force | Out-Null
     }
 
-    Write-Host "[{0}] [INFO] Logger inicializado. Arquivo: {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $global:TrivorLogFile
+    Write-Host ("[{0}] [INFO] Logger inicializado. Arquivo: {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $global:TrivorLogFile)
     Write-Log "Logger inicializado. Arquivo: $global:TrivorLogFile" "INFO"
 }
 

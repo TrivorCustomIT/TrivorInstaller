@@ -1,3 +1,5 @@
+Write-Host "Trivor Installer iniciado"
+
 # --- Auto-elevacao compativel com irm | iex ---
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
@@ -10,31 +12,28 @@ if (-not $isAdmin) {
     exit
 }
 
-Write-Host "Trivor Installer iniciado"
-
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
 
-$global:TrivorBasePath    = Join-Path $env:TEMP "TrivorInstaller"
-$global:TrivorPersistPath = Join-Path $env:SystemDrive "TrivorInstaller"
+$global:TrivorVersion  = "3.31"
+$global:TrivorBasePath = Join-Path $env:TEMP "TrivorInstaller"
 
 function Invoke-Cleanup {
     try {
         if (Test-Path $global:TrivorBasePath) {
             Remove-Item $global:TrivorBasePath -Recurse -Force -ErrorAction SilentlyContinue
         }
-    } catch {}
+    }
+    catch {}
 }
 
-# --- Limpa resquicios de execucoes anteriores ---
 Invoke-Cleanup
 
 try {
-
     $BasePath    = $global:TrivorBasePath
     $CorePath    = Join-Path $BasePath "core"
     $ClientsPath = Join-Path $BasePath "Clientes"
 
-    New-Item -ItemType Directory -Force -Path $CorePath    | Out-Null
+    New-Item -ItemType Directory -Force -Path $CorePath | Out-Null
     New-Item -ItemType Directory -Force -Path $ClientsPath | Out-Null
 
     $Owner  = "TrivorCustomIT"
@@ -43,7 +42,6 @@ try {
 
     $CoreBaseRaw = "https://raw.githubusercontent.com/$Owner/$Repo/$Branch/core"
 
-    # --- Download core modules ---
     $Modules = @(
         "Logger.ps1",
         "Cache.ps1",
@@ -59,13 +57,13 @@ try {
         $Dest = Join-Path $CorePath $Module
         try {
             Invoke-WebRequest -Uri $Url -OutFile $Dest -UseBasicParsing -ErrorAction Stop
-        } catch {
-            Write-Host "ERROR: Failed to download module '$Module'. Check your connection or repo."
+        }
+        catch {
+            Write-Host "ERROR: Failed to download module '$Module'."
             exit 1
         }
     }
 
-    # --- Download client JSONs via GitHub API ---
     $Headers = @{
         "User-Agent" = "TrivorInstaller"
         "Accept"     = "application/vnd.github+json"
@@ -83,7 +81,8 @@ try {
                 $downloadedAny = $true
             }
         }
-    } catch {
+    }
+    catch {
         Write-Host "ERROR: Failed to download client list from GitHub API."
         exit 1
     }
@@ -93,7 +92,6 @@ try {
         exit 1
     }
 
-    # --- Load modules ---
     . "$CorePath\Logger.ps1"
     . "$CorePath\Cache.ps1"
     . "$CorePath\Banner.ps1"
@@ -102,12 +100,27 @@ try {
     . "$CorePath\Hostname.ps1"
     . "$CorePath\Menu.ps1"
 
-    Initialize-Logger -BasePath $global:TrivorPersistPath -LogPrefix "TrivorInstaller"
+    Initialize-Logger
+    Start-TrivorTranscript
+    Write-Log "==== TrivorInstaller v$global:TrivorVersion ====" "INFO"
+
     Initialize-Cache
     Show-Banner
     Start-MainMenu
+}
+catch {
+    if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
+        Write-Log "Falha fatal no bootstrap: $($_.Exception.Message)" "ERROR"
+    }
+    else {
+        Write-Host "Falha fatal no bootstrap: $($_.Exception.Message)"
+    }
+    throw
+}
+finally {
+    if (Get-Command Stop-TrivorTranscript -ErrorAction SilentlyContinue) {
+        Stop-TrivorTranscript
+    }
 
-} finally {
-    Stop-Logger
     Invoke-Cleanup
 }

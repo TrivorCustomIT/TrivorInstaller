@@ -75,156 +75,222 @@ function Ensure-DownloadedWithSha256 {
 #endregion
 
 #region Winget - roda no contexto do usuario logado via Scheduled Task
+
+$global:TrivorWingetDir = Join-Path $env:SystemDrive "TrivorInstaller\Winget"
+$global:TrivorWingetExe = $null
+
 function Get-WingetExecutable {
     $candidates = @(
         (Join-Path $env:LOCALAPPDATA "Microsoft\WindowsApps\winget.exe"),
-        (Join-Path $env:ProgramFiles "WindowsApps\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe\winget.exe")
+        "$env:SystemRoot\System32\winget.exe"
     )
 
     foreach ($candidate in $candidates) {
-        if ($candidate -and (Test-Path $candidate)) { return $candidate }
+        if ($candidate -and (Test-Path $candidate)) {
+            return $candidate
+        }
     }
 
     $cmd = Get-Command winget.exe -ErrorAction SilentlyContinue
-    if ($cmd) { return $cmd.Source }
+    if ($cmd -and $cmd.Source) {
+        return $cmd.Source
+    }
 
     return $null
+}
+
+function Initialize-Winget {
+    Write-Log "Initializing winget..." "INFO"
+
+    if (-not (Test-Path $global:TrivorWingetDir)) {
+        New-Item -ItemType Directory -Force -Path $global:TrivorWingetDir | Out-Null
+    }
+
+    $global:TrivorWingetExe = Get-WingetExecutable
+
+    if (-not $global:TrivorWingetExe) {
+        Write-Log "Winget nao encontrado." "ERROR"
+        return $false
+    }
+
+    Write-Log "Winget ready. Executavel: $global:TrivorWingetExe" "INFO"
+    return $true
+}
+
+function Invoke-WingetDirect {
+    param(
+        [Parameter(Mandatory)] [string]$Arguments,
+        [Parameter(Mandatory)] [string]$OperationName
+    )
+
+    if (-not $global:TrivorWingetExe) {
+        $null = Initialize-Winget
+    }
+
+    if (-not $global:TrivorWingetExe) {
+        return @{
+            Success  = $false
+            ExitCode = -1
+            StdOut   = $null
+            StdErr   = $null
+        }
+    }
+
+    $stamp = Get-Date -Format "yyyyMMdd_HHmmss"
+    $safeName = ($OperationName -replace '[^a-zA-Z0-9\-_\.]', '_')
+    $stdout = Join-Path $global:TrivorWingetDir "${stamp}_${safeName}_stdout.log"
+    $stderr = Join-Path $global:TrivorWingetDir "${stamp}_${safeName}_stderr.log"
+
+    try {
+        $p = Start-Process `
+            -FilePath $global:TrivorWingetExe `
+            -ArgumentList $Arguments `
+            -Wait `
+            -PassThru `
+            -NoNewWindow `
+            -RedirectStandardOutput $stdout `
+            -RedirectStandardError $stderr
+
+        return @{
+            Success  = ($p.ExitCode -eq 0)
+            ExitCode = $p.ExitCode
+            StdOut   = $stdout
+            StdErr   = $stderr
+        }
+    }
+    catch {
+        Write-Log "Falha ao executar winget diretamente: $($_.Exception.Message)" "ERROR"
+        return @{
+            Success  = $false
+            ExitCode = -1
+            StdOut   = $stdout
+            StdErr   = $stderr
+        }
+    }
 }
 
 function Invoke-WingetAsUser {
     param(
         [Parameter(Mandatory)] [string]$Arguments,
-        [int]$TimeoutSeconds = 900
+        [Parameter(Mandatory)] [string]$OperationName
     )
-
-    $wingetExe = Get-WingetExecutable
-    if (-not $wingetExe) {
-        throw "winget.exe nao encontrado."
-    }
-
-    $runRoot = Join-Path $env:SystemDrive "TrivorInstaller\Winget"
-    New-Item -ItemType Directory -Path $runRoot -Force | Out-Null
-
-    $runId        = Get-Date -Format "yyyyMMdd_HHmmssfff"
-    $taskName     = "TrivorWinget_$runId"
-    $stdoutFile   = Join-Path $runRoot "$taskName.stdout.log"
-    $stderrFile   = Join-Path $runRoot "$taskName.stderr.log"
-    $exitCodeFile = Join-Path $runRoot "$taskName.exitcode.txt"
-    $runnerFile   = Join-Path $runRoot "$taskName.cmd"
-
-    $cmdContent = @"
-@echo off
-setlocal
-"$wingetExe" $Arguments 1>>"$stdoutFile" 2>>"$stderrFile"
-echo %errorlevel%>"$exitCodeFile"
-exit /b %errorlevel%
-"@
-    Set-Content -Path $runnerFile -Value $cmdContent -Encoding ASCII -Force
 
     $loggedUser = (Get-CimInstance Win32_ComputerSystem).UserName
 
     if (-not $loggedUser) {
         Write-Log "Nenhum usuario logado. Rodando winget no contexto atual." "WARN"
-        $p = Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$runnerFile`"" -Wait -PassThru -WindowStyle Hidden
-        $exitCode = if (Test-Path $exitCodeFile) { [int](Get-Content $exitCodeFile -Raw).Trim() } else { $p.ExitCode }
-        Write-Log "winget finalizado com codigo $exitCode" ($(if($exitCode -eq 0){"INFO"}else{"ERROR"}))
-        if ($exitCode -ne 0) {
-            if (Test-Path $stderrFile) { Write-Log ("winget stderr: " + ((Get-Content $stderrFile -Raw) -replace '\s+',' ').Trim()) "ERROR" }
-            throw "winget retornou codigo $exitCode"
-        }
-        return $true
+        return (Invoke-WingetDirect -Arguments $Arguments -OperationName $OperationName)
     }
 
-    $action    = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/c `"$runnerFile`""
-    $trigger   = New-ScheduledTaskTrigger -Once -At (Get-Date).AddSeconds(3)
+    if (-not $global:TrivorWingetExe) {
+        $null = Initialize-Winget
+    }
+
+    if (-not $global:TrivorWingetExe) {
+        return @{
+            Success  = $false
+            ExitCode = -1
+            StdOut   = $null
+            StdErr   = $null
+        }
+    }
+
+    $stamp = Get-Date -Format "yyyyMMdd_HHmmss"
+    $safeName = ($OperationName -replace '[^a-zA-Z0-9\-_\.]', '_')
+    $stdout = Join-Path $global:TrivorWingetDir "${stamp}_${safeName}_stdout.log"
+    $stderr = Join-Path $global:TrivorWingetDir "${stamp}_${safeName}_stderr.log"
+    $runner = Join-Path $global:TrivorWingetDir "${stamp}_${safeName}_runner.ps1"
+
+    $runnerContent = @"
+`$ErrorActionPreference = 'Continue'
+`$ProgressPreference = 'SilentlyContinue'
+& `"$global:TrivorWingetExe`" $Arguments 1>`"$stdout`" 2>`"$stderr`"
+exit `$LASTEXITCODE
+"@
+
+    Set-Content -Path $runner -Value $runnerContent -Encoding UTF8 -Force
+
+    $taskName = "TrivorWinget_$([guid]::NewGuid().ToString('N'))"
+    $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$runner`""
+    $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddSeconds(3)
     $principal = New-ScheduledTaskPrincipal -UserId $loggedUser -LogonType Interactive -RunLevel Limited
 
     try {
         Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Force | Out-Null
         Start-ScheduledTask -TaskName $taskName
 
+        $timeout = 600
         $elapsed = 0
         do {
-            Start-Sleep -Seconds 3
-            $elapsed += 3
-            $state = (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue).State
-        } while (($state -eq "Running" -or -not (Test-Path $exitCodeFile)) -and $elapsed -lt $TimeoutSeconds)
+            Start-Sleep -Seconds 2
+            $elapsed += 2
+            $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+            $state = $task.State
+        } while ($state -eq "Running" -and $elapsed -lt $timeout)
 
-        if (-not (Test-Path $exitCodeFile)) {
-            throw "Timeout aguardando retorno do winget. Task=$taskName"
+        $info = Get-ScheduledTaskInfo -TaskName $taskName -ErrorAction SilentlyContinue
+        $exitCode = if ($info) { [int]$info.LastTaskResult } else { -1 }
+
+        return @{
+            Success  = ($exitCode -eq 0)
+            ExitCode = $exitCode
+            StdOut   = $stdout
+            StdErr   = $stderr
         }
-
-        $exitCode = [int](Get-Content $exitCodeFile -Raw).Trim()
-        Write-Log "winget finalizado com codigo $exitCode" ($(if($exitCode -eq 0){"INFO"}else{"ERROR"}))
-
-        if (Test-Path $stdoutFile) {
-            $stdout = (Get-Content $stdoutFile -Raw).Trim()
-            if ($stdout) { Write-Log "winget stdout: $stdout" "DEBUG" }
+    }
+    catch {
+        Write-Log "Falha ao executar winget via Scheduled Task: $($_.Exception.Message)" "ERROR"
+        return @{
+            Success  = $false
+            ExitCode = -1
+            StdOut   = $stdout
+            StdErr   = $stderr
         }
-
-        if ($exitCode -ne 0) {
-            if (Test-Path $stderrFile) {
-                $stderr = (Get-Content $stderrFile -Raw).Trim()
-                if ($stderr) { Write-Log "winget stderr: $stderr" "ERROR" }
-            }
-            throw "winget retornou codigo $exitCode"
-        }
-
-        return $true
-    } finally {
+    }
+    finally {
         Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue | Out-Null
+        Remove-Item $runner -Force -ErrorAction SilentlyContinue
     }
 }
 
-function Initialize-Winget {
-    Write-Log "Initializing winget..." "INFO"
-    $wingetExe = Get-WingetExecutable
-    if (-not $wingetExe) {
-        Write-Log "winget.exe nao encontrado neste sistema." "ERROR"
-        return $false
-    }
+function Write-WingetResult {
+    param(
+        [Parameter(Mandatory)] [string]$Action,
+        [Parameter(Mandatory)] [string]$Target,
+        [Parameter(Mandatory)] $Result
+    )
 
-    try { & $wingetExe source reset --force *> $null } catch { Write-Log "Falha em winget source reset: $($_.Exception.Message)" "WARN" }
-    try { & $wingetExe source update --accept-source-agreements *> $null } catch { Write-Log "Falha em winget source update: $($_.Exception.Message)" "WARN" }
-    Write-Log "Winget ready. Executavel: $wingetExe" "INFO"
-    return $true
+    $msg = "$Action | Target=$Target | ExitCode=$($Result.ExitCode) | StdOut=$($Result.StdOut) | StdErr=$($Result.StdErr)"
+    if ($Result.Success) {
+        Write-Log $msg "INFO"
+    } else {
+        Write-Log $msg "ERROR"
+    }
 }
 
 function Install-WingetApp {
     param([Parameter(Mandatory)] [string]$WingetId)
 
     Write-Log "Installing via Winget: $WingetId" "INFO"
-    try {
-        Invoke-WingetAsUser -Arguments "install --id `"$WingetId`" --exact --source winget --silent --disable-interactivity --accept-package-agreements --accept-source-agreements" | Out-Null
-        return $true
-    } catch {
-        Write-Log "Winget install failed: $WingetId :: $($_.Exception.Message)" "ERROR"
-        return $false
-    }
+    $result = Invoke-WingetAsUser -Arguments "install --id `"$WingetId`" --exact --source winget --silent --accept-package-agreements --accept-source-agreements --disable-interactivity" -OperationName "install_$WingetId"
+    Write-WingetResult -Action "WingetInstall" -Target $WingetId -Result $result
+    return $result.Success
 }
 
 function Update-WingetApp {
     param([Parameter(Mandatory)] [string]$WingetId)
 
     Write-Log "Updating via Winget: $WingetId" "INFO"
-    try {
-        Invoke-WingetAsUser -Arguments "upgrade --id `"$WingetId`" --exact --source winget --silent --disable-interactivity --include-unknown --accept-package-agreements --accept-source-agreements" | Out-Null
-        return $true
-    } catch {
-        Write-Log "Winget upgrade failed: $WingetId :: $($_.Exception.Message)" "WARN"
-        return $false
-    }
+    $result = Invoke-WingetAsUser -Arguments "upgrade --id `"$WingetId`" --exact --source winget --silent --include-unknown --accept-package-agreements --accept-source-agreements --disable-interactivity" -OperationName "upgrade_$WingetId"
+    Write-WingetResult -Action "WingetUpgrade" -Target $WingetId -Result $result
+    return $result.Success
 }
 
 function Upgrade-WingetAll {
     Write-Log "Running: winget upgrade --all" "INFO"
-    try {
-        Invoke-WingetAsUser -Arguments "upgrade --all --source winget --silent --disable-interactivity --include-unknown --accept-package-agreements --accept-source-agreements" | Out-Null
-        return $true
-    } catch {
-        Write-Log "winget upgrade --all failed :: $($_.Exception.Message)" "WARN"
-        return $false
-    }
+    $result = Invoke-WingetAsUser -Arguments "upgrade --all --silent --include-unknown --accept-package-agreements --accept-source-agreements --disable-interactivity" -OperationName "upgrade_all"
+    Write-WingetResult -Action "WingetUpgradeAll" -Target "ALL" -Result $result
+    return $result.Success
 }
 #endregion
 
@@ -500,7 +566,7 @@ function Invoke-AppActionManual {
 function Invoke-ClientInstallation {
     param([Parameter(Mandatory)] [psobject]$ClientConfig)
 
-    Initialize-Winget
+    [void](Initialize-Winget)
     Write-Log "Starting AUTO mode for client: $($ClientConfig.Client)" "INFO"
 
     foreach ($app in $ClientConfig.Applications) {
