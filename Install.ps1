@@ -14,7 +14,8 @@ Write-Host "Trivor Installer iniciado"
 
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
 
-$global:TrivorBasePath = Join-Path $env:TEMP "TrivorInstaller"
+$global:TrivorBasePath    = Join-Path $env:TEMP "TrivorInstaller"
+$global:TrivorPersistPath = Join-Path $env:SystemDrive "TrivorInstaller"
 
 function Invoke-Cleanup {
     try {
@@ -101,11 +102,12 @@ try {
     . "$CorePath\Hostname.ps1"
     . "$CorePath\Menu.ps1"
 
-    Initialize-Logger
+    Initialize-Logger -BasePath $global:TrivorPersistPath -LogPrefix "TrivorInstaller"
     Initialize-Cache
     Show-Banner
     Start-MainMenu
 
 } finally {
+    Stop-Logger
     Invoke-Cleanup
 }
