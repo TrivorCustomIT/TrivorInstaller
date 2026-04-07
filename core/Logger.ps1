@@ -1,52 +1,72 @@
+$global:TrivorLogFile = $null
+$global:TrivorLogDir  = Join-Path $env:SystemDrive "TrivorInstaller\Logs"
+
 function Initialize-Logger {
     param(
-        [string]$BasePath = (Join-Path $env:SystemDrive "TrivorInstaller"),
-        [string]$LogPrefix = "TrivorInstaller"
+        [string]$LogDir = $global:TrivorLogDir
     )
 
-    $global:TrivorPersistRoot = $BasePath
-    $global:TrivorLogPath     = Join-Path $BasePath "Logs"
-    $global:TrivorRunId       = Get-Date -Format "yyyyMMdd_HHmmss"
-    $global:TrivorLogFile     = Join-Path $global:TrivorLogPath ("{0}_{1}.log" -f $LogPrefix, $global:TrivorRunId)
-
-    New-Item -ItemType Directory -Path $global:TrivorLogPath -Force | Out-Null
-
-    try {
-        Start-Transcript -Path $global:TrivorLogFile -Append -Force | Out-Null
-    } catch {
-        Write-Host "[WARN] Nao foi possivel iniciar transcript: $($_.Exception.Message)" -ForegroundColor Yellow
+    if (-not (Test-Path $LogDir)) {
+        New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
     }
 
-    Write-Log "Logger inicializado. Arquivo: $global:TrivorLogFile" "INFO"
+    $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+    $global:TrivorLogFile = Join-Path $LogDir "TrivorInstaller_$timestamp.log"
+
+    if (-not (Test-Path $global:TrivorLogFile)) {
+        New-Item -ItemType File -Path $global:TrivorLogFile -Force | Out-Null
+    }
+
+    Write-Host "Log file: $global:TrivorLogFile"
 }
 
 function Write-Log {
     param(
-        [Parameter(Mandatory)] [string]$Message,
-        [ValidateSet("INFO","WARN","ERROR","DEBUG")] [string]$Level = "INFO"
+        [Parameter(Mandatory = $true)][string]$Message,
+        [ValidateSet("INFO","WARN","ERROR","DEBUG")][string]$Level = "INFO"
     )
 
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $line = "[{0}] [{1}] {2}" -f $timestamp, $Level, $Message
+    $line = "[$timestamp] [$Level] $Message"
 
-    switch ($Level) {
-        "ERROR" { Write-Host $line -ForegroundColor Red }
-        "WARN"  { Write-Host $line -ForegroundColor Yellow }
-        "DEBUG" { Write-Host $line -ForegroundColor DarkGray }
-        default { Write-Host $line }
+    Write-Host $line
+
+    if ([string]::IsNullOrWhiteSpace($global:TrivorLogFile)) {
+        return
     }
 
-    if ($global:TrivorLogFile) {
+    $maxRetries = 6
+    $retryDelayMs = 250
+
+    for ($i = 1; $i -le $maxRetries; $i++) {
         try {
-            Add-Content -Path $global:TrivorLogFile -Value $line -Encoding UTF8
-        } catch {
-            Write-Host "[WARN] Falha ao gravar log em arquivo: $($_.Exception.Message)" -ForegroundColor Yellow
+            $fs = [System.IO.File]::Open(
+                $global:TrivorLogFile,
+                [System.IO.FileMode]::Append,
+                [System.IO.FileAccess]::Write,
+                [System.IO.FileShare]::ReadWrite
+            )
+
+            try {
+                $sw = New-Object System.IO.StreamWriter($fs, [System.Text.UTF8Encoding]::new($false))
+                $sw.WriteLine($line)
+                $sw.Flush()
+            }
+            finally {
+                if ($sw) { $sw.Dispose() }
+                if ($fs) { $fs.Dispose() }
+            }
+
+            break
+        }
+        catch {
+            if ($i -eq $maxRetries) {
+                Write-Host "[LOGGER-FAIL] $line"
+                Write-Host "[LOGGER-FAIL] $($_.Exception.Message)"
+            }
+            else {
+                Start-Sleep -Milliseconds $retryDelayMs
+            }
         }
     }
-}
-
-function Stop-Logger {
-    try {
-        Stop-Transcript | Out-Null
-    } catch {}
 }
