@@ -1,5 +1,6 @@
 ﻿{
  "Client": "SOGEST",
+ "HostnamePrefix": "SGT",
   "Applications": [
     {
       "Id": "7zip",
