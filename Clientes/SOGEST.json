@@ -60,10 +60,10 @@
         "Owner": "TrivorCustomIT",
         "Repo": "TrivorInstallerRepository",
         "Branch": "main",
-        "RelativePath": "Installers/clients/arapyau/rmm/AGENT_453519_V10_14_4_RW.EXE",
+        "RelativePath": "Installers/clients/sogest/AGENT_453519_V10_15_3_RW.EXE",
         "SilentArgs": "/silent /norestart",
-        "CacheFileName": "AGENT_453519_V10_14_4_RW.EXE",
-        "Sha256": "C60374E800E83588FF9F75577DEACFCBF8425F96F3BEB807E7C010CAAC2EC22A",
+        "CacheFileName": "AGENT_453519_V10_15_3_RW.EXE",
+        "Sha256": "9E13D07A010576ECF8AB5D7FC5547FCA9B77661D01680024C0463CFAA84A7D5A",
         "CleanAfterInstall": true
       }
     },
