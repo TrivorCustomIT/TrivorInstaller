@@ -47,6 +47,38 @@ function Get-ClientConfigByName {
     }
 }
 
+function Show-AppGrid {
+    param([Parameter(Mandatory)] [array]$Apps)
+
+    $cols      = 3
+    $termWidth = $Host.UI.RawUI.WindowSize.Width
+    $colWidth  = [math]::Floor(($termWidth - 4) / $cols)
+
+    $total = $Apps.Count
+    $rows  = [math]::Ceiling($total / $cols)
+
+    Write-Host "Apps disponiveis:" -ForegroundColor Cyan
+    Write-Host ""
+
+    for ($row = 0; $row -lt $rows; $row++) {
+        $line = ""
+        for ($col = 0; $col -lt $cols; $col++) {
+            $idx = $row + ($col * $rows)
+            if ($idx -lt $total) {
+                $num  = $idx + 1
+                $name = $Apps[$idx].Name
+                $cell = "[{0,2}] {1}" -f $num, $name
+                $line += $cell.PadRight($colWidth)
+            }
+        }
+        Write-Host $line
+    }
+
+    Write-Host ""
+    Write-Host "  [0] Cancelar" -ForegroundColor DarkGray
+    Write-Host ""
+}
+
 function Show-ClientMenu {
     param([Parameter(Mandatory)] [string]$ClientName)
 
@@ -80,9 +112,35 @@ function Show-ClientMenu {
         }
 
         if ($choice -eq "2") {
-            Invoke-ClientManualInstall -ClientConfig $cfg
+            Clear-Host
+            Show-Banner
+            Write-Host "Cliente: $ClientName" -ForegroundColor Cyan
             Write-Host ""
-            Write-Host "Concluido." -ForegroundColor Green
+
+            $apps = $cfg.Applications
+            if (-not $apps -or $apps.Count -eq 0) {
+                Write-Host "Nenhum app encontrado para este cliente." -ForegroundColor Yellow
+                Wait-Enter
+                continue
+            }
+
+            Show-AppGrid -Apps $apps
+
+            $appChoice = Read-Host "Digite o numero do app (ou 0 para cancelar)"
+
+            if ($appChoice -eq "0") { continue }
+
+            $appNum = 0
+            if (-not [int]::TryParse($appChoice, [ref]$appNum) -or $appNum -lt 1 -or $appNum -gt $apps.Count) {
+                Write-Host "Opcao invalida." -ForegroundColor Red
+                Wait-Enter
+                continue
+            }
+
+            $selectedApp = $apps[$appNum - 1]
+            Write-Host ""
+            $r = Invoke-AppActionManual -App $selectedApp
+            Write-Host ""
             Wait-Enter
             continue
         }

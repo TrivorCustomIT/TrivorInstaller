@@ -6,7 +6,7 @@ function Get-InstallerVersion {
             return $tags[0].name
         }
     } catch {}
-    return "v3.21"
+    return "v3.32"
 }
 
 function Show-Banner {
