@@ -31,7 +31,7 @@
       "Name": "Trivor RMM Agent",
       "Detection": {
         "Method": "Hybrid",
-        "RegistryDisplayName": "Advanced Monitoring Agent", # mexer ainda
+        "RegistryDisplayName": "Advanced Monitoring Agent", 
         "MinVersion": "10.14.4",
         "ServiceName": "Advanced Monitoring Agent",
         "ServiceDisplayName": "Advanced Monitoring Agent"

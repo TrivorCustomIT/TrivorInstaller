@@ -1,5 +1,6 @@
 ﻿{
   "Client": "ARAPYAU",
+  "HostnamePrefix": "ARPSP",
   "Applications": [
     {
       "Id": "7zip",

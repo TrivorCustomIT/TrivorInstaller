@@ -60,7 +60,7 @@
       },
       "Install": {
         "Method": "UrlExe",
-        "Url": "https://api.us0.swi-rc.com/download/getpcinstall.php?iid=741dc11e-19a5-11f1-b22b-0affd1392461",
+        "Url": "https://api.us0.swi-rc.com/download/getpcinstall.php?iid=4d11dacb-34ec-11f1-b22b-0affd1392461",
         "SilentArgs": "/silent",
         "CacheFileName": "TakeControlAgent.exe",
         "Sha256": "",
