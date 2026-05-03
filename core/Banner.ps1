@@ -26,15 +26,15 @@ function Show-Banner {
 "@
 
     Write-Host ""
-    Write-Host "====================================================" -ForegroundColor DarkCyan
-    Write-Host ("         TRIVOR INSTALLER {0,-27}" -f $version) -ForegroundColor Cyan
-    Write-Host "====================================================" -ForegroundColor DarkCyan
+    Write-Host "=======================================================" -ForegroundColor DarkCyan
+    Write-Host ("            TRIVOR INSTALLER {0,-27}                  " -f $version) -ForegroundColor Cyan
+    Write-Host "=======================================================" -ForegroundColor DarkCyan
     Write-Host ""
     Write-Host $ascii -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "====================================================" -ForegroundColor DarkCyan
-    Write-Host "     Developed by Fernando Oliveira                 " -ForegroundColor Gray
-    Write-Host "     GitHub: github.com/nandinhooliveira            " -ForegroundColor Gray
-    Write-Host "====================================================" -ForegroundColor DarkCyan
+    Write-Host "=======================================================" -ForegroundColor DarkCyan
+    Write-Host "        Developed by Fernando B. Oliveira              " -ForegroundColor Gray
+    Write-Host "        GitHub: github.com/nandinhooliveira            " -ForegroundColor Gray
+    Write-Host "=======================================================" -ForegroundColor DarkCyan
     Write-Host ""
 }
