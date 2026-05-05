@@ -258,8 +258,9 @@ function Invoke-TrivorDownloadWithProgress {
 
 #region Winget - contexto normal ou RMM/SYSTEM via usuario logado
 
-$global:TrivorWingetDir = Join-Path $env:SystemDrive "TrivorInstaller\Winget"
-$global:TrivorWingetExe = $null
+$global:TrivorWingetDir         = Join-Path $env:SystemDrive "TrivorInstaller\Winget"
+$global:TrivorWingetExe         = $null
+$global:TrivorWingetInitialized = $false
 
 function Test-TrivorSystemContext {
     # Detecta contexto nao-interativo: SYSTEM literal, contas de servico NT, ou
@@ -339,6 +340,11 @@ function Get-WingetExecutable {
 }
 
 function Initialize-Winget {
+    # Evita re-inicializacao redundante (ex: chamada por app em loop de deteccao)
+    if ($global:TrivorWingetInitialized) {
+        return ($global:TrivorWingetExe -ne $null -or (Test-TrivorSystemContext))
+    }
+
     Write-Log "Initializing winget..." "INFO"
 
     # Log da identidade atual para facilitar debug em RMM
@@ -356,11 +362,13 @@ function Initialize-Winget {
         if ($loggedUser) {
             Write-Log "Contexto SYSTEM/RMM detectado. Winget sera executado no usuario logado: $loggedUser" "INFO"
             $global:TrivorWingetExe = $null
+            $global:TrivorWingetInitialized = $true
             return $true
         }
 
         Write-Log "Contexto SYSTEM/RMM detectado, mas nenhum usuario interativo esta logado. Winget indisponivel." "ERROR"
         $global:TrivorWingetExe = $null
+        $global:TrivorWingetInitialized = $true
         return $false
     }
 
@@ -368,10 +376,12 @@ function Initialize-Winget {
 
     if (-not $global:TrivorWingetExe) {
         Write-Log "Winget nao encontrado no contexto atual." "ERROR"
+        $global:TrivorWingetInitialized = $true
         return $false
     }
 
     Write-Log "Winget ready. Executavel: $global:TrivorWingetExe" "INFO"
+    $global:TrivorWingetInitialized = $true
     return $true
 }
 
@@ -526,11 +536,11 @@ function Invoke-WingetAsUser {
     )
 
     if (Test-TrivorSystemContext) {
-        Write-Log "Contexto SYSTEM/RMM detectado. Redirecionando Winget para usuario logado." "INFO"
+        Write-Log "Contexto SYSTEM/RMM detectado. Redirecionando Winget para usuario logado." "DEBUG"
         return (Invoke-WingetAsLoggedUserTask -Arguments $Arguments -OperationName $OperationName)
     }
 
-    Write-Log "Contexto normal detectado. Executando Winget no contexto atual." "INFO"
+    Write-Log "Contexto normal detectado. Executando Winget no contexto atual." "DEBUG"
     return (Invoke-WingetDirect -Arguments $Arguments -OperationName $OperationName)
 }
 

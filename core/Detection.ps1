@@ -8,7 +8,7 @@ function Test-WingetApp {
     try {
         $result = winget list --id $WingetId --exact --accept-source-agreements 2>$null
         if ($result -match [regex]::Escape($WingetId)) {
-            Write-Log "Winget detected: $WingetId" "INFO"
+            Write-Log "Winget detected: $WingetId" "DEBUG"
             return $true
         }
     } catch {}
@@ -30,7 +30,7 @@ function Test-RegistryApp {
         $app = Get-ItemProperty $path -ErrorAction SilentlyContinue |
                Where-Object { $_.DisplayName -like "*$DisplayName*" }
         if ($app) {
-            Write-Log "Registry detected: $DisplayName" "INFO"
+            Write-Log "Registry detected: $DisplayName" "DEBUG"
             return $true
         }
     }
@@ -64,7 +64,7 @@ function Test-ExeApp {
     if (-not (Test-Path $Path)) { return $false }
 
     if (-not $MinVersion) {
-        Write-Log "Exe detected: $Path" "INFO"
+        Write-Log "Exe detected: $Path" "DEBUG"
         return $true
     }
 
@@ -72,15 +72,15 @@ function Test-ExeApp {
         $fileVersion = (Get-Item $Path).VersionInfo.FileVersion
         if ($fileVersion) {
             if ([version]$fileVersion -ge [version]$MinVersion) {
-                Write-Log "Exe detected (version ok): $Path ($fileVersion >= $MinVersion)" "INFO"
+                Write-Log "Exe detected (version ok): $Path ($fileVersion >= $MinVersion)" "DEBUG"
                 return $true
             } else {
-                Write-Log "Exe detected but version is old: $Path ($fileVersion < $MinVersion)" "WARN"
+                Write-Log "Exe detected but version is old: $Path ($fileVersion < $MinVersion)" "DEBUG"
                 return $false
             }
         }
     } catch {
-        Write-Log "Exe detected (version check failed): $Path" "WARN"
+        Write-Log "Exe detected (version check failed): $Path" "DEBUG"
         return $true
     }
 
@@ -95,11 +95,11 @@ function Test-ServiceApp {
     try {
         if ($ServiceName) {
             $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
-            if ($svc) { Write-Log "Service detected: $ServiceName" "INFO"; return $true }
+            if ($svc) { Write-Log "Service detected: $ServiceName" "DEBUG"; return $true }
         }
         if ($DisplayName) {
             $svc2 = Get-Service -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -like "*$DisplayName*" }
-            if ($svc2) { Write-Log "Service detected by DisplayName: $DisplayName" "INFO"; return $true }
+            if ($svc2) { Write-Log "Service detected by DisplayName: $DisplayName" "DEBUG"; return $true }
         }
     } catch {}
     return $false
@@ -116,7 +116,7 @@ function Test-RegistryKey {
     try {
         $key = Get-Item -Path $KeyPath -ErrorAction SilentlyContinue
         if ($key) {
-            Write-Log "RegistryKey detected: $KeyPath" "INFO"
+            Write-Log "RegistryKey detected: $KeyPath" "DEBUG"
             return $true
         }
     } catch {}
@@ -126,49 +126,71 @@ function Test-RegistryKey {
 #endregion
 
 #region State
+function Get-ApplicationState {
+    param([Parameter(Mandatory)] $App)
 
-function Get-WingetState {
-    param(
-        [Parameter(Mandatory)]
-        [string]$WingetId
-    )
+    $state = @{ Installed = $false; Source = $null; Version = $null }
 
-    try {
-        $result = Invoke-WingetAsUser `
-            -Arguments "list --id `"$WingetId`" --exact --source winget --accept-source-agreements --disable-interactivity" `
-            -OperationName "detect_$WingetId"
-
-        if (-not $result.Success) { return $null }
-        if (-not $result.StdOut -or -not (Test-Path $result.StdOut)) { return $null }
-
-        $output = Get-Content $result.StdOut -Raw -ErrorAction SilentlyContinue
-
-        if ([string]::IsNullOrWhiteSpace($output)) { return $null }
-
-        if ($output -match $WingetId) {
-
-            $lines = $output -split "`n"
-            $matchLine = $lines | Where-Object { $_ -match $WingetId } | Select-Object -First 1
-
-            $version = $null
-            if ($matchLine) {
-                $parts = ($matchLine -replace '\s+', ' ').Trim().Split(' ')
-                if ($parts.Count -ge 3) {
-                    $version = $parts[2]
-                }
-            }
-
-            return [pscustomobject]@{
-                Installed = $true
-                Source    = "Winget(User)"
-                Version   = $version
-            }
+    if ($App.PSObject.Properties.Match("WingetId").Count -gt 0 -and $App.WingetId) {
+        if (Test-WingetApp -WingetId $App.WingetId) {
+            $state.Installed = $true; $state.Source = "Winget"; return $state
         }
+    }
 
-        return $null
+    if ($App.PSObject.Properties.Match("Detection").Count -eq 0 -or -not $App.Detection) { return $state }
+
+    $d = $App.Detection
+    $method = $d.Method
+
+    if ($method -eq "Hybrid") {
+        if ($d.RegistryDisplayName -and (Test-RegistryApp -DisplayName $d.RegistryDisplayName)) {
+            $state.Installed = $true; $state.Source = "Registry"
+            $state.Version = Get-RegistryAppVersion -DisplayName $d.RegistryDisplayName
+            return $state
+        }
+        if (($d.ServiceName -or $d.ServiceDisplayName) -and (Test-ServiceApp -ServiceName $d.ServiceName -DisplayName $d.ServiceDisplayName)) {
+            $state.Installed = $true; $state.Source = "Service"; return $state
+        }
+        return $state
     }
-    catch {
-        Write-Log ("Erro Winget detection: {0}" -f $_.Exception.Message) "WARN"
-        return $null
+
+    if ($method -eq "Registry" -and $d.DisplayName) {
+        if (Test-RegistryApp -DisplayName $d.DisplayName) {
+            $state.Installed = $true; $state.Source = "Registry"
+            $state.Version = Get-RegistryAppVersion -DisplayName $d.DisplayName
+        }
+        return $state
     }
+
+    if ($method -eq "Exe" -and $d.Path) {
+        if (Test-ExeApp -Path $d.Path -MinVersion $d.MinVersion) {
+            $state.Installed = $true; $state.Source = "Exe"
+        }
+        return $state
+    }
+
+    if ($method -eq "Service") {
+        if (Test-ServiceApp -ServiceName $d.ServiceName -DisplayName $d.ServiceDisplayName) {
+            $state.Installed = $true; $state.Source = "Service"
+        }
+        return $state
+    }
+
+
+    # 7) RegistryKey — verifica existencia de uma chave de registry
+    if ($method -eq "RegistryKey" -and $d.KeyPath) {
+        if (Test-RegistryKey -KeyPath $d.KeyPath) {
+            $state.Installed = $true
+            $state.Source    = "RegistryKey"
+        }
+        return $state
+    }
+
+    return $state
 }
+
+function Test-ApplicationInstalled {
+    param([Parameter(Mandatory)] $App)
+    return [bool](Get-ApplicationState -App $App).Installed
+}
+#endregion

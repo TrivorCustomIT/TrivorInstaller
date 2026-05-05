@@ -33,7 +33,10 @@ function Write-Log {
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $line = "[$timestamp] [$Level] $Message"
 
-    Write-Host $line
+    # DEBUG vai apenas para o arquivo de log, nunca para o console
+    if ($Level -ne "DEBUG") {
+        Write-Host $line
+    }
 
     if ([string]::IsNullOrWhiteSpace($global:TrivorLogFile)) {
         return
