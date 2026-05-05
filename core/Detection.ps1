@@ -3,91 +3,16 @@
 # ==============================
 
 #region Winget
-function Get-WingetAppState {
-    param([Parameter(Mandatory)] [string]$WingetId)
-
-    if (-not $global:TrivorWingetDetectionCache) {
-        $global:TrivorWingetDetectionCache = @{}
-    }
-
-    if ($global:TrivorWingetDetectionCache.ContainsKey($WingetId)) {
-        return $global:TrivorWingetDetectionCache[$WingetId]
-    }
-
-    $state = [pscustomobject]@{
-        Installed = $false
-        Source    = $null
-        Version   = $null
-        RawOutput = $null
-    }
-
-    try {
-        $result = $null
-        $output = $null
-        $source = "Winget"
-
-        if (Get-Command Invoke-WingetAsUser -ErrorAction SilentlyContinue) {
-            $result = Invoke-WingetAsUser `
-                -Arguments "list --id `"$WingetId`" --exact --source winget --accept-source-agreements --disable-interactivity" `
-                -OperationName "detect_$WingetId"
-
-            if ($result -and $result.StdOut -and (Test-Path $result.StdOut)) {
-                $output = Get-Content $result.StdOut -Raw -ErrorAction SilentlyContinue
-                if (Get-Command Test-TrivorSystemContext -ErrorAction SilentlyContinue) {
-                    if (Test-TrivorSystemContext) { $source = "Winget(User)" }
-                }
-            }
-        }
-        else {
-            $output = winget list --id $WingetId --exact --source winget --accept-source-agreements --disable-interactivity 2>$null | Out-String
-        }
-
-        $state.RawOutput = $output
-
-        if (-not [string]::IsNullOrWhiteSpace($output) -and $output -match [regex]::Escape($WingetId)) {
-            $version = $null
-            $lines = $output -split "`r?`n"
-            $matchLine = $lines | Where-Object { $_ -match [regex]::Escape($WingetId) } | Select-Object -First 1
-
-            if ($matchLine) {
-                $normalized = ($matchLine -replace '\s+', ' ').Trim()
-                $parts = $normalized.Split(' ')
-
-                $idIndex = -1
-                for ($idx = 0; $idx -lt $parts.Count; $idx++) {
-                    if ($parts[$idx] -eq $WingetId) {
-                        $idIndex = $idx
-                        break
-                    }
-                }
-
-                if ($idIndex -ge 0 -and ($idIndex + 1) -lt $parts.Count) {
-                    $version = $parts[$idIndex + 1]
-                }
-            }
-
-            $state = [pscustomobject]@{
-                Installed = $true
-                Source    = $source
-                Version   = $version
-                RawOutput = $output
-            }
-
-            Write-Log ("{0} detected: {1}" -f $source, $WingetId) "INFO"
-        }
-    }
-    catch {
-        Write-Log ("Winget detection failed for {0}: {1}" -f $WingetId, $_.Exception.Message) "WARN"
-    }
-
-    $global:TrivorWingetDetectionCache[$WingetId] = $state
-    return $state
-}
-
 function Test-WingetApp {
     param([Parameter(Mandatory)] [string]$WingetId)
-    $state = Get-WingetAppState -WingetId $WingetId
-    return [bool]$state.Installed
+    try {
+        $result = winget list --id $WingetId --exact --accept-source-agreements 2>$null
+        if ($result -match [regex]::Escape($WingetId)) {
+            Write-Log "Winget detected: $WingetId" "INFO"
+            return $true
+        }
+    } catch {}
+    return $false
 }
 #endregion
 
@@ -201,75 +126,49 @@ function Test-RegistryKey {
 #endregion
 
 #region State
-function Get-ApplicationState {
-    param([Parameter(Mandatory)] $App)
 
-    $state = @{ Installed = $false; Source = $null; Version = $null }
+function Get-WingetState {
+    param(
+        [Parameter(Mandatory)]
+        [string]$WingetId
+    )
 
-    if ($App.PSObject.Properties.Match("WingetId").Count -gt 0 -and $App.WingetId) {
-        $wingetState = Get-WingetAppState -WingetId $App.WingetId
-        if ($wingetState -and $wingetState.Installed) {
-            $state.Installed = $true
-            if ($wingetState.Source) { $state.Source = $wingetState.Source } else { $state.Source = "Winget" }
-            $state.Version = $wingetState.Version
-            return $state
+    try {
+        $result = Invoke-WingetAsUser `
+            -Arguments "list --id `"$WingetId`" --exact --source winget --accept-source-agreements --disable-interactivity" `
+            -OperationName "detect_$WingetId"
+
+        if (-not $result.Success) { return $null }
+        if (-not $result.StdOut -or -not (Test-Path $result.StdOut)) { return $null }
+
+        $output = Get-Content $result.StdOut -Raw -ErrorAction SilentlyContinue
+
+        if ([string]::IsNullOrWhiteSpace($output)) { return $null }
+
+        if ($output -match $WingetId) {
+
+            $lines = $output -split "`n"
+            $matchLine = $lines | Where-Object { $_ -match $WingetId } | Select-Object -First 1
+
+            $version = $null
+            if ($matchLine) {
+                $parts = ($matchLine -replace '\s+', ' ').Trim().Split(' ')
+                if ($parts.Count -ge 3) {
+                    $version = $parts[2]
+                }
+            }
+
+            return [pscustomobject]@{
+                Installed = $true
+                Source    = "Winget(User)"
+                Version   = $version
+            }
         }
+
+        return $null
     }
-
-    if ($App.PSObject.Properties.Match("Detection").Count -eq 0 -or -not $App.Detection) { return $state }
-
-    $d = $App.Detection
-    $method = $d.Method
-
-    if ($method -eq "Hybrid") {
-        if ($d.RegistryDisplayName -and (Test-RegistryApp -DisplayName $d.RegistryDisplayName)) {
-            $state.Installed = $true; $state.Source = "Registry"
-            $state.Version = Get-RegistryAppVersion -DisplayName $d.RegistryDisplayName
-            return $state
-        }
-        if (($d.ServiceName -or $d.ServiceDisplayName) -and (Test-ServiceApp -ServiceName $d.ServiceName -DisplayName $d.ServiceDisplayName)) {
-            $state.Installed = $true; $state.Source = "Service"; return $state
-        }
-        return $state
+    catch {
+        Write-Log ("Erro Winget detection: {0}" -f $_.Exception.Message) "WARN"
+        return $null
     }
-
-    if ($method -eq "Registry" -and $d.DisplayName) {
-        if (Test-RegistryApp -DisplayName $d.DisplayName) {
-            $state.Installed = $true; $state.Source = "Registry"
-            $state.Version = Get-RegistryAppVersion -DisplayName $d.DisplayName
-        }
-        return $state
-    }
-
-    if ($method -eq "Exe" -and $d.Path) {
-        if (Test-ExeApp -Path $d.Path -MinVersion $d.MinVersion) {
-            $state.Installed = $true; $state.Source = "Exe"
-        }
-        return $state
-    }
-
-    if ($method -eq "Service") {
-        if (Test-ServiceApp -ServiceName $d.ServiceName -DisplayName $d.ServiceDisplayName) {
-            $state.Installed = $true; $state.Source = "Service"
-        }
-        return $state
-    }
-
-
-    # 7) RegistryKey — verifica existencia de uma chave de registry
-    if ($method -eq "RegistryKey" -and $d.KeyPath) {
-        if (Test-RegistryKey -KeyPath $d.KeyPath) {
-            $state.Installed = $true
-            $state.Source    = "RegistryKey"
-        }
-        return $state
-    }
-
-    return $state
 }
-
-function Test-ApplicationInstalled {
-    param([Parameter(Mandatory)] $App)
-    return [bool](Get-ApplicationState -App $App).Installed
-}
-#endregion
