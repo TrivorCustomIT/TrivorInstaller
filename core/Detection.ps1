@@ -2,22 +2,17 @@
 # Trivor Installer - Detection.ps1
 # ==============================
 
-#region Helpers para contexto SYSTEM/RMM
+#region Registry helpers
 
 function Get-TrivorLoggedOnUserSID {
-    # Retorna o SID do usuario interativo logado (para acessar HKU\<SID> no contexto SYSTEM)
     try {
         $cs = Get-CimInstance Win32_ComputerSystem -ErrorAction Stop
         $userName = $cs.UserName
         if ([string]::IsNullOrWhiteSpace($userName)) { return $null }
-
-        # userName = "DOMINIO\usuario" ou "MAQUINA\usuario"
-        $parts = $userName -split '\\'
+        $parts  = $userName -split '\\'
         $domain = if ($parts.Count -ge 2) { $parts[0] } else { $env:COMPUTERNAME }
         $user   = if ($parts.Count -ge 2) { $parts[1] } else { $parts[0] }
-
-        $objUser = New-Object System.Security.Principal.NTAccount($domain, $user)
-        $sid = $objUser.Translate([System.Security.Principal.SecurityIdentifier]).Value
+        $sid = (New-Object System.Security.Principal.NTAccount($domain, $user)).Translate([System.Security.Principal.SecurityIdentifier]).Value
         return $sid
     }
     catch {
@@ -27,218 +22,229 @@ function Get-TrivorLoggedOnUserSID {
 }
 
 function Get-RegistryUninstallPaths {
-    # Retorna os caminhos de Uninstall a serem verificados,
-    # incluindo o hive do usuario logado quando rodando como SYSTEM/RMM
     $paths = @(
         "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*",
         "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
     )
 
-    # Contexto interativo normal: inclui HKCU do processo atual
     if (-not (Test-TrivorSystemContext)) {
         $paths += "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*"
         return $paths
     }
 
-    # Contexto SYSTEM/RMM: tenta carregar HKU\<SID> do usuario logado
+    # Contexto SYSTEM: adiciona hive do usuario logado via SID
     $sid = Get-TrivorLoggedOnUserSID
     if ($sid) {
-        $huPath = "Registry::HKU\$sid\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*"
-        $huPathWow = "Registry::HKU\$sid\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
-        $paths += $huPath
-        $paths += $huPathWow
-        Write-Log "Registry: incluindo hive do usuario logado SID=$sid" "DEBUG"
+        $paths += "Registry::HKU\$sid\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*"
+        $paths += "Registry::HKU\$sid\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
     }
-
     return $paths
 }
 
-#endregion
-
-#region Winget
-function Test-WingetApp {
-    param([Parameter(Mandatory)] [string]$WingetId)
-
-    # Contexto SYSTEM/RMM: executa winget list como usuario logado via Scheduled Task
-    if (Test-TrivorSystemContext) {
-        $result = Invoke-WingetAsUser `
-            -Arguments "list --id `"$WingetId`" --exact --accept-source-agreements" `
-            -OperationName "detect_$WingetId"
-
-        if ($result.Success -or $result.ExitCode -eq 0) {
-            # Verifica no stdout se o app realmente apareceu
-            $out = ""
-            if ($result.StdOut -and (Test-Path $result.StdOut)) {
-                try { $out = Get-Content $result.StdOut -Raw -ErrorAction SilentlyContinue } catch {}
-            }
-            if ($out -match [regex]::Escape($WingetId)) {
-                Write-Log "Winget detected (RMM): $WingetId" "DEBUG"
-                return $true
-            }
-        }
-        return $false
-    }
-
-    # Contexto normal: chama winget diretamente
-    try {
-        $wingetExe = $global:TrivorWingetExe
-        if (-not $wingetExe) {
-            $wingetExe = Get-Command winget.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source
-        }
-        if (-not $wingetExe) { return $false }
-
-        $result = & $wingetExe list --id $WingetId --exact --accept-source-agreements 2>$null
-        if ($result -match [regex]::Escape($WingetId)) {
-            Write-Log "Winget detected: $WingetId" "DEBUG"
-            return $true
-        }
-    } catch {}
-    return $false
-}
-
-function Get-WingetAppVersion {
-    param([Parameter(Mandatory)] [string]$WingetId)
-
-    try {
-        $wingetExe = $global:TrivorWingetExe
-        if (-not $wingetExe -and -not (Test-TrivorSystemContext)) {
-            $wingetExe = Get-Command winget.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source
-        }
-        if (-not $wingetExe) { return $null }
-
-        $lines = & $wingetExe list --id $WingetId --exact --accept-source-agreements 2>$null
-        foreach ($line in $lines) {
-            if ($line -match [regex]::Escape($WingetId)) {
-                # Tenta extrair versao da saida tabular do winget
-                $parts = $line -split '\s{2,}'
-                if ($parts.Count -ge 3) { return $parts[2].Trim() }
-            }
-        }
-    } catch {}
-    return $null
-}
-#endregion
-
-#region Registry
-function Test-RegistryApp {
+function Find-AppInRegistry {
+    # Retorna o objeto de registro do app ou $null
     param([Parameter(Mandatory)] [string]$DisplayName)
-
-    $paths = Get-RegistryUninstallPaths
-
-    foreach ($path in $paths) {
+    foreach ($path in (Get-RegistryUninstallPaths)) {
         try {
             $app = Get-ItemProperty $path -ErrorAction SilentlyContinue |
-                   Where-Object { $_.DisplayName -like "*$DisplayName*" }
-            if ($app) {
-                Write-Log "Registry detected: $DisplayName" "DEBUG"
-                return $true
-            }
+                   Where-Object { $_.DisplayName -like "*$DisplayName*" } |
+                   Select-Object -First 1
+            if ($app) { return $app }
         } catch {}
     }
+    return $null
+}
+
+#endregion
+
+#region Winget (cache em lote — executado UMA vez por sessao)
+
+$global:TrivorWingetListCache      = $null
+$global:TrivorWingetListCacheReady = $false
+
+function Initialize-WingetListCache {
+    if ($global:TrivorWingetListCacheReady) { return }
+
+    $global:TrivorWingetListCacheReady = $true  # marca antes para evitar loop
+
+    if (Test-TrivorSystemContext) {
+        # RMM/SYSTEM: roda winget list como usuario logado (1 task para tudo)
+        Write-Log "Carregando lista winget via usuario logado (RMM)..." "INFO"
+        $result = Invoke-WingetAsUser -Arguments "list --accept-source-agreements" -OperationName "list_all_detect"
+
+        if ($result.StdOut -and (Test-Path $result.StdOut)) {
+            try {
+                $global:TrivorWingetListCache = Get-Content $result.StdOut -Raw -ErrorAction SilentlyContinue
+                Write-Log "Lista winget carregada ($($global:TrivorWingetListCache.Length) bytes)" "INFO"
+            } catch {
+                Write-Log "Falha ao ler lista winget: $($_.Exception.Message)" "WARN"
+            }
+        } else {
+            Write-Log "Winget indisponivel no contexto RMM. Usando apenas Registry para deteccao." "WARN"
+        }
+        return
+    }
+
+    # Contexto normal: winget direto
+    $wingetExe = $global:TrivorWingetExe
+    if (-not $wingetExe) {
+        $wingetExe = Get-Command winget.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source
+    }
+    if (-not $wingetExe) {
+        Write-Log "Winget nao encontrado. Usando apenas Registry para deteccao." "WARN"
+        return
+    }
+
+    try {
+        Write-Log "Carregando lista winget..." "INFO"
+        $global:TrivorWingetListCache = (& $wingetExe list --accept-source-agreements 2>$null) -join "`n"
+        Write-Log "Lista winget carregada." "INFO"
+    } catch {
+        Write-Log "Falha ao carregar lista winget: $($_.Exception.Message)" "WARN"
+    }
+}
+
+function Test-WingetInCache {
+    param([string]$WingetId)
+    if ([string]::IsNullOrWhiteSpace($global:TrivorWingetListCache)) { return $false }
+    return ($global:TrivorWingetListCache -match [regex]::Escape($WingetId))
+}
+
+function Get-WingetVersionFromCache {
+    param([string]$WingetId)
+    if ([string]::IsNullOrWhiteSpace($global:TrivorWingetListCache)) { return $null }
+    foreach ($line in ($global:TrivorWingetListCache -split "`n")) {
+        if ($line -match [regex]::Escape($WingetId)) {
+            $parts = $line -split '\s{2,}'
+            if ($parts.Count -ge 3) { return $parts[2].Trim() }
+        }
+    }
+    return $null
+}
+
+#endregion
+
+#region Registry detection
+
+function Test-RegistryApp {
+    param([Parameter(Mandatory)] [string]$DisplayName)
+    $app = Find-AppInRegistry -DisplayName $DisplayName
+    if ($app) { Write-Log "Registry detected: $DisplayName" "DEBUG"; return $true }
     return $false
 }
 
 function Get-RegistryAppVersion {
     param([Parameter(Mandatory)] [string]$DisplayName)
-
-    $paths = Get-RegistryUninstallPaths
-
-    foreach ($path in $paths) {
-        try {
-            $apps = Get-ItemProperty $path -ErrorAction SilentlyContinue |
-                    Where-Object { $_.DisplayName -like "*$DisplayName*" }
-            foreach ($a in $apps) {
-                if ($a.DisplayVersion) { return [string]$a.DisplayVersion }
-            }
-        } catch {}
-    }
+    $app = Find-AppInRegistry -DisplayName $DisplayName
+    if ($app -and $app.DisplayVersion) { return [string]$app.DisplayVersion }
     return $null
 }
+
 #endregion
 
 #region EXE
+
 function Test-ExeApp {
     param([Parameter(Mandatory)] [string]$Path, [string]$MinVersion)
 
     if (-not (Test-Path $Path)) { return $false }
-
-    if (-not $MinVersion) {
-        Write-Log "Exe detected: $Path" "DEBUG"
-        return $true
-    }
+    if (-not $MinVersion) { Write-Log "Exe detected: $Path" "DEBUG"; return $true }
 
     try {
-        $fileVersion = (Get-Item $Path).VersionInfo.FileVersion
-        if ($fileVersion) {
-            if ([version]$fileVersion -ge [version]$MinVersion) {
-                Write-Log "Exe detected (version ok): $Path ($fileVersion >= $MinVersion)" "DEBUG"
-                return $true
-            } else {
-                Write-Log "Exe detected but version is old: $Path ($fileVersion < $MinVersion)" "DEBUG"
-                return $false
+        $fv = (Get-Item $Path).VersionInfo.FileVersion
+        if ($fv) {
+            if ([version]$fv -ge [version]$MinVersion) {
+                Write-Log "Exe detected (ok): $Path ($fv)" "DEBUG"; return $true
             }
+            Write-Log "Exe versao antiga: $Path ($fv < $MinVersion)" "DEBUG"; return $false
         }
     } catch {
-        Write-Log "Exe detected (version check failed): $Path" "DEBUG"
-        return $true
+        Write-Log "Exe detected (sem versao): $Path" "DEBUG"; return $true
     }
-
     return $true
 }
+
 #endregion
 
 #region Service
+
 function Test-ServiceApp {
     param([string]$ServiceName, [string]$DisplayName)
-
     try {
         if ($ServiceName) {
-            $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
-            if ($svc) { Write-Log "Service detected: $ServiceName" "DEBUG"; return $true }
+            if (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue) {
+                Write-Log "Service detected: $ServiceName" "DEBUG"; return $true
+            }
         }
         if ($DisplayName) {
-            $svc2 = Get-Service -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -like "*$DisplayName*" }
-            if ($svc2) { Write-Log "Service detected by DisplayName: $DisplayName" "DEBUG"; return $true }
+            if (Get-Service -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -like "*$DisplayName*" }) {
+                Write-Log "Service detected: $DisplayName" "DEBUG"; return $true
+            }
         }
     } catch {}
     return $false
 }
+
 #endregion
 
 #region RegistryKey
+
 function Test-RegistryKey {
     param([Parameter(Mandatory)] [string]$KeyPath)
-
     try {
-        $key = Get-Item -Path $KeyPath -ErrorAction SilentlyContinue
-        if ($key) {
-            Write-Log "RegistryKey detected: $KeyPath" "DEBUG"
-            return $true
+        if (Get-Item -Path $KeyPath -ErrorAction SilentlyContinue) {
+            Write-Log "RegistryKey detected: $KeyPath" "DEBUG"; return $true
         }
     } catch {}
-
     return $false
 }
+
 #endregion
 
 #region State
+
 function Get-ApplicationState {
     param([Parameter(Mandatory)] $App)
 
     $state = @{ Installed = $false; Source = $null; Version = $null }
 
-    if ($App.PSObject.Properties.Match("WingetId").Count -gt 0 -and $App.WingetId) {
-        if (Test-WingetApp -WingetId $App.WingetId) {
+    $hasWingetId = ($App.PSObject.Properties.Match("WingetId").Count -gt 0 -and $App.WingetId)
+
+    # --- 1) Tenta deteccao via winget (cache) ---
+    if ($hasWingetId) {
+        Initialize-WingetListCache
+
+        if (Test-WingetInCache -WingetId $App.WingetId) {
             $state.Installed = $true
             $state.Source    = "Winget"
-            $v = Get-WingetAppVersion -WingetId $App.WingetId
+            $v = Get-WingetVersionFromCache -WingetId $App.WingetId
             if ($v) { $state.Version = $v }
             return $state
         }
     }
 
-    if ($App.PSObject.Properties.Match("Detection").Count -eq 0 -or -not $App.Detection) { return $state }
+    # --- 2) Fallback registry por nome do app (sempre tenta, mesmo sem Detection) ---
+    # Util quando winget nao esta disponivel no contexto de execucao (RMM/SYSTEM)
+    if ($hasWingetId -or ($App.PSObject.Properties.Match("Detection").Count -eq 0 -or -not $App.Detection)) {
+        $appName = $App.Name
+        if (-not [string]::IsNullOrWhiteSpace($appName)) {
+            $regApp = Find-AppInRegistry -DisplayName $appName
+            if ($regApp) {
+                Write-Log "Registry fallback detected: $appName" "DEBUG"
+                $state.Installed = $true
+                $state.Source    = "Registry"
+                if ($regApp.DisplayVersion) { $state.Version = [string]$regApp.DisplayVersion }
+                return $state
+            }
+        }
+    }
 
+    # --- 3) Sem Detection definida, nao ha mais o que tentar ---
+    if ($App.PSObject.Properties.Match("Detection").Count -eq 0 -or -not $App.Detection) {
+        return $state
+    }
+
+    # --- 4) Detection explicita ---
     $d      = $App.Detection
     $method = $d.Method
 
@@ -248,8 +254,10 @@ function Get-ApplicationState {
             $state.Version = Get-RegistryAppVersion -DisplayName $d.RegistryDisplayName
             return $state
         }
-        if (($d.ServiceName -or $d.ServiceDisplayName) -and (Test-ServiceApp -ServiceName $d.ServiceName -DisplayName $d.ServiceDisplayName)) {
-            $state.Installed = $true; $state.Source = "Service"; return $state
+        if (($d.ServiceName -or $d.ServiceDisplayName) -and
+            (Test-ServiceApp -ServiceName $d.ServiceName -DisplayName $d.ServiceDisplayName)) {
+            $state.Installed = $true; $state.Source = "Service"
+            return $state
         }
         return $state
     }
@@ -278,8 +286,7 @@ function Get-ApplicationState {
 
     if ($method -eq "RegistryKey" -and $d.KeyPath) {
         if (Test-RegistryKey -KeyPath $d.KeyPath) {
-            $state.Installed = $true
-            $state.Source    = "RegistryKey"
+            $state.Installed = $true; $state.Source = "RegistryKey"
         }
         return $state
     }
@@ -291,4 +298,5 @@ function Test-ApplicationInstalled {
     param([Parameter(Mandatory)] $App)
     return [bool](Get-ApplicationState -App $App).Installed
 }
+
 #endregion
