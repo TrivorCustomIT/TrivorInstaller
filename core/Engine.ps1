@@ -83,62 +83,69 @@ function Invoke-TrivorDownloadWithProgress {
         [string]$OutFile
     )
 
-    Write-Log "Iniciando download: $Url"
-
-    $request = [System.Net.HttpWebRequest]::Create($Url)
-    $request.UserAgent = "TrivorInstaller"
-    $response = $request.GetResponse()
-
-    $totalBytes = $response.ContentLength
-    $responseStream = $response.GetResponseStream()
-
-    $fileStream = [System.IO.File]::Create($OutFile)
+    Write-Log "Iniciando download: $Url" "INFO"
 
     try {
-        $buffer = New-Object byte[] 8192
-        $totalRead = 0
+        if (Test-Path $OutFile) {
+            Remove-Item $OutFile -Force -ErrorAction SilentlyContinue
+        }
 
-        do {
-            $read = $responseStream.Read($buffer, 0, $buffer.Length)
+        $folder = Split-Path $OutFile
+        New-Item -ItemType Directory -Path $folder -Force | Out-Null
 
-            if ($read -gt 0) {
-                $fileStream.Write($buffer, 0, $read)
-                $totalRead += $read
+        try {
+            Write-Log "Tentando download via BITS..." "INFO"
 
-                if ($totalBytes -gt 0) {
-                    $percent = [math]::Round(($totalRead / $totalBytes) * 100, 2)
-                    $mbRead = [math]::Round($totalRead / 1MB, 2)
-                    $mbTotal = [math]::Round($totalBytes / 1MB, 2)
+            Start-BitsTransfer `
+                -Source $Url `
+                -Destination $OutFile `
+                -DisplayName "TrivorInstaller Download" `
+                -Description $Url `
+                -ErrorAction Stop
 
-                    Write-Progress `
-                        -Activity "Baixando arquivo" `
-                        -Status "$mbRead MB de $mbTotal MB ($percent%)" `
-                        -PercentComplete $percent
-                }
-                else {
-                    $mbRead = [math]::Round($totalRead / 1MB, 2)
+            Write-Log "Download via BITS concluido." "INFO"
+        }
+        catch {
+            Write-Log "BITS falhou, tentando Invoke-WebRequest: $($_.Exception.Message)" "WARN"
 
-                    Write-Progress `
-                        -Activity "Baixando arquivo" `
-                        -Status "$mbRead MB baixados" `
-                        -PercentComplete 0
-                }
+            Invoke-WebRequest `
+                -Uri $Url `
+                -OutFile $OutFile `
+                -UseBasicParsing `
+                -ErrorAction Stop
+        }
+
+        if (-not (Test-Path $OutFile)) {
+            Write-Log "Download falhou: arquivo nao foi criado." "ERROR"
+            return $false
+        }
+
+        $fileInfo = Get-Item $OutFile -ErrorAction Stop
+
+        if ($fileInfo.Length -lt 102400) {
+            Write-Log "Download invalido: arquivo muito pequeno ($($fileInfo.Length) bytes)." "ERROR"
+            Remove-Item $OutFile -Force -ErrorAction SilentlyContinue
+            return $false
+        }
+
+        $firstBytes = Get-Content -Path $OutFile -Encoding Byte -TotalCount 2 -ErrorAction SilentlyContinue
+
+        if ($firstBytes.Count -ge 2) {
+            $signature = "{0:X2}{1:X2}" -f $firstBytes[0], $firstBytes[1]
+
+            if ($signature -ne "4D5A") {
+                Write-Log "Download invalido: arquivo nao parece ser um EXE valido. Assinatura=$signature" "ERROR"
+                Remove-Item $OutFile -Force -ErrorAction SilentlyContinue
+                return $false
             }
+        }
 
-        } while ($read -gt 0)
-
-        Write-Progress -Activity "Baixando arquivo" -Completed
-        Write-Log "Download concluido: $OutFile"
+        Write-Log "Download validado: $OutFile | Size=$([math]::Round($fileInfo.Length / 1MB, 2)) MB" "INFO"
         return $true
     }
     catch {
         Write-Log "Erro no download: $($_.Exception.Message)" "ERROR"
         return $false
-    }
-    finally {
-        $fileStream.Close()
-        $responseStream.Close()
-        $response.Close()
     }
 }
 
