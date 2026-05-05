@@ -47,31 +47,80 @@ function Get-ClientConfigByName {
     }
 }
 
+function Get-AppManualMenuStatus {
+    param([Parameter(Mandatory)] $App)
+
+    $result = [ordered]@{
+        Installed = $false
+        Source    = ""
+        Version   = ""
+        Status    = "NAO INSTALADO"
+        Marker    = "--"
+        Color     = "Red"
+    }
+
+    try {
+        $state = Get-ApplicationState -App $App
+
+        if ($state) {
+            $result.Installed = [bool]$state.Installed
+            if ($state.Source)  { $result.Source  = [string]$state.Source }
+            if ($state.Version) { $result.Version = [string]$state.Version }
+
+            if ($result.Installed) {
+                $result.Status = "INSTALADO"
+                $result.Marker = "OK"
+                $result.Color  = "Green"
+
+                try {
+                    if (Get-Command Should-ForceReinstallByVersion -ErrorAction SilentlyContinue) {
+                        if (Should-ForceReinstallByVersion -App $App -State $state) {
+                            $result.Status = "VERSAO ANTIGA"
+                            $result.Marker = "!!"
+                            $result.Color  = "Yellow"
+                        }
+                    }
+                }
+                catch {}
+            }
+        }
+    }
+    catch {
+        $result.Status = "ERRO DETECCAO"
+        $result.Marker = "??"
+        $result.Color  = "DarkYellow"
+        try { Write-Log "Erro ao detectar status de $($App.Name): $($_.Exception.Message)" "WARN" } catch {}
+    }
+
+    return [pscustomobject]$result
+}
+
 function Show-AppGrid {
     param([Parameter(Mandatory)] [array]$Apps)
 
-    $cols      = 3
-    $termWidth = $Host.UI.RawUI.WindowSize.Width
-    $colWidth  = [math]::Floor(($termWidth - 4) / $cols)
-
-    $total = $Apps.Count
-    $rows  = [math]::Ceiling($total / $cols)
-
     Write-Host "Apps disponiveis:" -ForegroundColor Cyan
     Write-Host ""
+    Write-Host "Legenda: [OK] Instalado | [--] Nao instalado | [!!] Versao antiga" -ForegroundColor DarkGray
+    Write-Host ""
 
-    for ($row = 0; $row -lt $rows; $row++) {
-        $line = ""
-        for ($col = 0; $col -lt $cols; $col++) {
-            $idx = $row + ($col * $rows)
-            if ($idx -lt $total) {
-                $num  = $idx + 1
-                $name = $Apps[$idx].Name
-                $cell = "[{0,2}] {1}" -f $num, $name
-                $line += $cell.PadRight($colWidth)
-            }
-        }
-        Write-Host $line
+    $global:TrivorManualStatusCache = @{}
+
+    $header = "{0,4}  {1,-4} {2,-48} {3,-16} {4,-12} {5}" -f "Num", "St", "Aplicacao", "Status", "Fonte", "Versao"
+    Write-Host $header -ForegroundColor DarkCyan
+    Write-Host ("-" * ([Math]::Min($header.Length, 118))) -ForegroundColor DarkGray
+
+    for ($idx = 0; $idx -lt $Apps.Count; $idx++) {
+        $app = $Apps[$idx]
+        $status = Get-AppManualMenuStatus -App $app
+
+        $key = if ($app.Id) { [string]$app.Id } else { [string]($idx + 1) }
+        $global:TrivorManualStatusCache[$key] = $status
+
+        $source = if ($status.Source) { $status.Source } else { "-" }
+        $version = if ($status.Version) { $status.Version } else { "-" }
+
+        $line = "[{0,2}]  [{1}] {2,-48} {3,-16} {4,-12} {5}" -f ($idx + 1), $status.Marker, $app.Name, $status.Status, $source, $version
+        Write-Host $line -ForegroundColor $status.Color
     }
 
     Write-Host ""

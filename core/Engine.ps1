@@ -74,77 +74,184 @@ function Ensure-DownloadedWithSha256 {
 }
 #endregion
 
+function Get-TrivorFileHeaderHex {
+    param(
+        [Parameter(Mandatory)] [string]$Path,
+        [int]$Bytes = 2
+    )
+
+    try {
+        if (-not (Test-Path $Path)) { return $null }
+        $fs = [System.IO.File]::Open($Path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)
+        try {
+            $buffer = New-Object byte[] $Bytes
+            $read = $fs.Read($buffer, 0, $Bytes)
+            if ($read -le 0) { return $null }
+            return (($buffer[0..($read - 1)] | ForEach-Object { $_.ToString('X2') }) -join '')
+        }
+        finally {
+            $fs.Close()
+        }
+    }
+    catch {
+        Write-Log "Nao foi possivel ler assinatura do arquivo: $Path | $($_.Exception.Message)" "WARN"
+        return $null
+    }
+}
+
 function Invoke-TrivorDownloadWithProgress {
     param(
-        [Parameter(Mandatory)]
-        [string]$Url,
-
-        [Parameter(Mandatory)]
-        [string]$OutFile
+        [Parameter(Mandatory)] [string]$Url,
+        [Parameter(Mandatory)] [string]$OutFile,
+        [int]$MaxAttempts = 3,
+        [switch]$ValidateExe
     )
 
     Write-Log "Iniciando download: $Url" "INFO"
 
-    try {
-        if (Test-Path $OutFile) {
-            Remove-Item $OutFile -Force -ErrorAction SilentlyContinue
-        }
-
-        $folder = Split-Path $OutFile
+    $folder = Split-Path $OutFile
+    if (-not (Test-Path $folder)) {
         New-Item -ItemType Directory -Path $folder -Force | Out-Null
+    }
 
+    $partialFile = "$OutFile.download"
+
+    try {
+        # Garante TLS moderno em Windows PowerShell 5.1
         try {
-            Write-Log "Tentando download via BITS..." "INFO"
-
-            Start-BitsTransfer `
-                -Source $Url `
-                -Destination $OutFile `
-                -DisplayName "TrivorInstaller Download" `
-                -Description $Url `
-                -ErrorAction Stop
-
-            Write-Log "Download via BITS concluido." "INFO"
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls
         }
-        catch {
-            Write-Log "BITS falhou, tentando Invoke-WebRequest: $($_.Exception.Message)" "WARN"
+        catch {}
 
-            Invoke-WebRequest `
-                -Uri $Url `
-                -OutFile $OutFile `
-                -UseBasicParsing `
-                -ErrorAction Stop
-        }
+        for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+            try {
+                if (Test-Path $OutFile) { Remove-Item $OutFile -Force -ErrorAction SilentlyContinue }
+                if (Test-Path $partialFile) { Remove-Item $partialFile -Force -ErrorAction SilentlyContinue }
 
-        if (-not (Test-Path $OutFile)) {
-            Write-Log "Download falhou: arquivo nao foi criado." "ERROR"
-            return $false
-        }
+                Write-Log "Download tentativa $attempt/$MaxAttempts" "INFO"
 
-        $fileInfo = Get-Item $OutFile -ErrorAction Stop
+                $request = [System.Net.HttpWebRequest]::Create($Url)
+                $request.Method = "GET"
+                $request.AllowAutoRedirect = $true
+                $request.MaximumAutomaticRedirections = 10
+                $request.Timeout = 300000
+                $request.ReadWriteTimeout = 300000
+                $request.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) TrivorInstaller/3.34"
+                $request.Accept = "*/*"
 
-        if ($fileInfo.Length -lt 102400) {
-            Write-Log "Download invalido: arquivo muito pequeno ($($fileInfo.Length) bytes)." "ERROR"
-            Remove-Item $OutFile -Force -ErrorAction SilentlyContinue
-            return $false
-        }
+                $response = $request.GetResponse()
+                $statusCode = [int]$response.StatusCode
+                $contentType = $response.ContentType
+                $totalBytes = [int64]$response.ContentLength
 
-        $firstBytes = Get-Content -Path $OutFile -Encoding Byte -TotalCount 2 -ErrorAction SilentlyContinue
+                Write-Log "HTTP Status=$statusCode | ContentType=$contentType | ContentLength=$totalBytes" "INFO"
 
-        if ($firstBytes.Count -ge 2) {
-            $signature = "{0:X2}{1:X2}" -f $firstBytes[0], $firstBytes[1]
+                $inputStream = $response.GetResponseStream()
+                $outputStream = [System.IO.File]::Open($partialFile, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
 
-            if ($signature -ne "4D5A") {
-                Write-Log "Download invalido: arquivo nao parece ser um EXE valido. Assinatura=$signature" "ERROR"
-                Remove-Item $OutFile -Force -ErrorAction SilentlyContinue
-                return $false
+                try {
+                    $buffer = New-Object byte[] (1024 * 1024)
+                    [int64]$downloaded = 0
+                    $lastLoggedPercent = -10
+                    $lastLoggedMb = -25
+
+                    while ($true) {
+                        $read = $inputStream.Read($buffer, 0, $buffer.Length)
+                        if ($read -le 0) { break }
+
+                        $outputStream.Write($buffer, 0, $read)
+                        $downloaded += $read
+
+                        if ($totalBytes -gt 0) {
+                            $percent = [math]::Floor(($downloaded / $totalBytes) * 100)
+                            $mbRead = [math]::Round($downloaded / 1MB, 2)
+                            $mbTotal = [math]::Round($totalBytes / 1MB, 2)
+
+                            Write-Progress `
+                                -Activity "Baixando instalador" `
+                                -Status "$mbRead MB de $mbTotal MB ($percent%)" `
+                                -PercentComplete ([Math]::Min($percent, 100))
+
+                            if (($percent -ge ($lastLoggedPercent + 10)) -or ($percent -eq 100)) {
+                                Write-Log "Download progresso: $percent% ($mbRead MB / $mbTotal MB)" "INFO"
+                                $lastLoggedPercent = $percent
+                            }
+                        }
+                        else {
+                            $mbRead = [math]::Round($downloaded / 1MB, 2)
+                            Write-Progress `
+                                -Activity "Baixando instalador" `
+                                -Status "$mbRead MB baixados" `
+                                -PercentComplete 0
+
+                            if ($mbRead -ge ($lastLoggedMb + 25)) {
+                                Write-Log "Download progresso: $mbRead MB baixados" "INFO"
+                                $lastLoggedMb = $mbRead
+                            }
+                        }
+                    }
+
+                    $outputStream.Flush()
+                }
+                finally {
+                    if ($outputStream) { $outputStream.Close() }
+                    if ($inputStream) { $inputStream.Close() }
+                    if ($response) { $response.Close() }
+                    Write-Progress -Activity "Baixando instalador" -Completed
+                }
+
+                if (-not (Test-Path $partialFile)) {
+                    throw "Arquivo parcial nao foi criado."
+                }
+
+                $fileInfo = Get-Item $partialFile -ErrorAction Stop
+
+                if ($fileInfo.Length -le 0) {
+                    throw "Arquivo baixado esta vazio."
+                }
+
+                if ($totalBytes -gt 0 -and $fileInfo.Length -ne $totalBytes) {
+                    throw "Download incompleto. Esperado=$totalBytes bytes | Baixado=$($fileInfo.Length) bytes"
+                }
+
+                $signature = Get-TrivorFileHeaderHex -Path $partialFile -Bytes 4
+
+                if ($contentType -match 'text/html|application/json|text/plain|xml') {
+                    $preview = ""
+                    try { $preview = (Get-Content -Path $partialFile -TotalCount 5 -ErrorAction SilentlyContinue) -join " " } catch {}
+                    throw "Servidor retornou conteudo nao-binario. ContentType=$contentType | Inicio=$preview"
+                }
+
+                if ($ValidateExe) {
+                    if (-not $signature -or -not $signature.StartsWith("4D5A")) {
+                        $preview = ""
+                        try { $preview = (Get-Content -Path $partialFile -TotalCount 3 -ErrorAction SilentlyContinue) -join " " } catch {}
+                        throw "Arquivo baixado nao parece EXE valido. Assinatura=$signature | Inicio=$preview"
+                    }
+                }
+
+                Move-Item -Path $partialFile -Destination $OutFile -Force
+
+                $finalInfo = Get-Item $OutFile -ErrorAction Stop
+                Write-Log "Download concluido e validado: $OutFile | Size=$([math]::Round($finalInfo.Length / 1MB, 2)) MB | Signature=$signature" "INFO"
+                return $true
+            }
+            catch {
+                Write-Log "Falha no download tentativa $attempt/$MaxAttempts: $($_.Exception.Message)" "WARN"
+                try { if (Test-Path $partialFile) { Remove-Item $partialFile -Force -ErrorAction SilentlyContinue } } catch {}
+                try { if (Test-Path $OutFile) { Remove-Item $OutFile -Force -ErrorAction SilentlyContinue } } catch {}
+
+                if ($attempt -lt $MaxAttempts) {
+                    Start-Sleep -Seconds (3 * $attempt)
+                }
             }
         }
 
-        Write-Log "Download validado: $OutFile | Size=$([math]::Round($fileInfo.Length / 1MB, 2)) MB" "INFO"
-        return $true
+        Write-Log "Download falhou apos $MaxAttempts tentativas: $Url" "ERROR"
+        return $false
     }
     catch {
-        Write-Log "Erro no download: $($_.Exception.Message)" "ERROR"
+        Write-Log "Erro inesperado no download: $($_.Exception.Message)" "ERROR"
         return $false
     }
 }
@@ -502,64 +609,81 @@ function Install-Application {
         New-Item -ItemType Directory -Force -Path $cacheRoot | Out-Null
 
         $cacheFileName = if ($App.Install.CacheFileName) { $App.Install.CacheFileName } else { [System.IO.Path]::GetFileName($App.Install.Url) }
-        $localFile = Join-Path $cacheRoot $cacheFileName
+        if ([string]::IsNullOrWhiteSpace($cacheFileName)) {
+            $cacheFileName = "$($App.Id).exe"
+        }
 
+        $localFile = Join-Path $cacheRoot $cacheFileName
         $hasHash = ($App.Install.PSObject.Properties.Match("Sha256").Count -gt 0 -and $App.Install.Sha256 -and $App.Install.Sha256 -ne "")
 
-        if ($hasHash) {
+        if ($hasHash -and (Test-Path $localFile)) {
             $expected = $App.Install.Sha256.ToUpper()
+            $current = Get-FileSha256 -Path $localFile
 
-            if (Test-Path $localFile) {
-                $current = Get-FileSha256 -Path $localFile
-                if (-not ($current -and $current -eq $expected)) {
-                    try { Remove-Item $localFile -Force -ErrorAction SilentlyContinue } catch {}
-                }
+            if ($current -and $current -eq $expected) {
+                Write-Log "SHA256 OK (cached): $localFile" "INFO"
+            }
+            else {
+                Write-Log "Cache existente invalido para $($App.Name). Removendo e baixando novamente." "WARN"
+                try { Remove-Item $localFile -Force -ErrorAction SilentlyContinue } catch {}
+            }
+        }
+
+        if (-not (Test-Path $localFile)) {
+            if ($hasHash) {
+                Write-Log "Downloading (UrlExe, with hash): $($App.Install.Url)" "INFO"
+            }
+            else {
+                Write-Log "Downloading (UrlExe, no hash): $($App.Install.Url)" "INFO"
             }
 
-            if (-not (Test-Path $localFile)) {
-                Write-Log "Downloading (UrlExe): $($App.Install.Url)" "INFO"
-                try {
-                    $ok = Invoke-TrivorDownloadWithProgress `
-    -Url $App.Install.Url `
-    -OutFile $localFile
+            $ok = Invoke-TrivorDownloadWithProgress `
+                -Url $App.Install.Url `
+                -OutFile $localFile `
+                -MaxAttempts 3 `
+                -ValidateExe
 
-if (-not $ok) {
-    Write-Log "Download failed: $($App.Install.Url)" "ERROR"
-    return
-}
-                } catch {
-                    Write-Log "Download failed: $($App.Install.Url)" "ERROR"
-                    return
-                }
-
-                $hash = Get-FileSha256 -Path $localFile
-                if (-not ($hash -and $hash -eq $expected)) {
-                    Write-Log "SHA256 mismatch after download. Aborting." "ERROR"
-                    try { Remove-Item $localFile -Force -ErrorAction SilentlyContinue } catch {}
-                    return
-                }
-                Write-Log "SHA256 OK: $localFile" "INFO"
-            }
-        } else {
-            Write-Log "Downloading (UrlExe, no hash): $($App.Install.Url)" "INFO"
-            try {
-                $ok = Invoke-TrivorDownloadWithProgress `
-    -Url $App.Install.Url `
-    -OutFile $localFile
-
-if (-not $ok) {
-    Write-Log "Download failed: $($App.Install.Url)" "ERROR"
-    return
-}
-            } catch {
+            if (-not $ok) {
                 Write-Log "Download failed: $($App.Install.Url)" "ERROR"
                 return
             }
         }
 
+        if ($hasHash) {
+            $expected = $App.Install.Sha256.ToUpper()
+            $hash = Get-FileSha256 -Path $localFile
+
+            if (-not ($hash -and $hash -eq $expected)) {
+                Write-Log "SHA256 mismatch after download. Expected=$expected | Current=$hash. Aborting." "ERROR"
+                try { Remove-Item $localFile -Force -ErrorAction SilentlyContinue } catch {}
+                return
+            }
+
+            Write-Log "SHA256 OK: $localFile" "INFO"
+        }
+
+        if (-not (Test-Path $localFile)) {
+            Write-Log "Installer nao encontrado apos download: $localFile" "ERROR"
+            return
+        }
+
+        $fileInfo = Get-Item $localFile -ErrorAction SilentlyContinue
+        if (-not $fileInfo -or $fileInfo.Length -le 0) {
+            Write-Log "Installer invalido ou vazio: $localFile" "ERROR"
+            return
+        }
+
         Write-Log "Executing installer: $localFile" "INFO"
         $installArgs = if ($App.Install.SilentArgs) { $App.Install.SilentArgs } else { "" }
-        Start-Process -FilePath $localFile -ArgumentList $installArgs -Wait -NoNewWindow
+
+        try {
+            $p = Start-Process -FilePath $localFile -ArgumentList $installArgs -Wait -NoNewWindow -PassThru
+            Write-Log "Installer finished: $($App.Name) | ExitCode=$($p.ExitCode)" "INFO"
+        }
+        catch {
+            Write-Log "Falha ao executar installer: $localFile | $($_.Exception.Message)" "ERROR"
+            return
+        }
 
         if ($App.Install.CleanAfterInstall -eq $true) {
             try { Remove-Item $localFile -Force -ErrorAction SilentlyContinue } catch {}
