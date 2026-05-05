@@ -136,7 +136,7 @@ function Invoke-TrivorDownloadWithProgress {
                 $request.MaximumAutomaticRedirections = 10
                 $request.Timeout = 300000
                 $request.ReadWriteTimeout = 300000
-                $request.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) TrivorInstaller/3.36"
+                $request.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) TrivorInstaller/3.34"
                 $request.Accept = "*/*"
 
                 $response = $request.GetResponse()
@@ -247,7 +247,7 @@ function Invoke-TrivorDownloadWithProgress {
             }
         }
 
-        Write-Log ("Download falhou apos {0} tentativas: {1}" -f $MaxAttempts, $Url) "ERROR"
+        Write-Log Write-Log ("Download falhou apos {0} tentativas: {1}" -f $MaxAttempts, $Url) "ERROR"
         return $false
     }
     catch {
@@ -262,9 +262,41 @@ $global:TrivorWingetDir = Join-Path $env:SystemDrive "TrivorInstaller\Winget"
 $global:TrivorWingetExe = $null
 
 function Test-TrivorSystemContext {
+    # Detecta contexto nao-interativo: SYSTEM literal, contas de servico NT, ou
+    # ausencia de perfil de usuario (tipico de RMMs como N-able, Datto, Ninja, etc.)
     try {
-        $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
-        return ($identity -eq "NT AUTHORITY\SYSTEM")
+        $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+        $name     = $identity.Name
+
+        # 1) NT AUTHORITY\SYSTEM classico
+        if ($name -eq "NT AUTHORITY\SYSTEM") { return $true }
+
+        # 2) Contas de servico NT (ex: NT SERVICE\NableAgent)
+        if ($name -match '^NT (AUTHORITY\\(LOCAL SERVICE|NETWORK SERVICE)|SERVICE\\)') { return $true }
+
+        # 3) Sem perfil de usuario carregado (nenhum USERPROFILE apontando para C:\Users\<alguem>)
+        $profile = [System.Environment]::GetFolderPath("UserProfile")
+        if ([string]::IsNullOrWhiteSpace($profile)) { return $true }
+        if ($profile -match '\\(system32|windows|systemprofile)$') { return $true }
+
+        # 4) Variaveis de ambiente tipicas de agentes RMM
+        $rmmSignals = @(
+            $env:NABLE_AGENT_HOME,       # N-able
+            $env:SOLARWINDS_AGENT,       # SolarWinds/N-able legado
+            $env:NAAGENT_HOME,           # N-able alternativo
+            $env:DATTO_AGENT,            # Datto RMM
+            $env:NINJAONE_AGENT,         # NinjaOne
+            $env:ATERA_AGENT             # Atera
+        )
+        foreach ($sig in $rmmSignals) {
+            if (-not [string]::IsNullOrWhiteSpace($sig)) { return $true }
+        }
+
+        # 5) LOCALAPPDATA ausente ou apontando para perfil de sistema
+        if ([string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) { return $true }
+        if ($env:LOCALAPPDATA -match '\\(systemprofile|LocalService|NetworkService)\\') { return $true }
+
+        return $false
     }
     catch {
         return $false
@@ -308,6 +340,12 @@ function Get-WingetExecutable {
 
 function Initialize-Winget {
     Write-Log "Initializing winget..." "INFO"
+
+    # Log da identidade atual para facilitar debug em RMM
+    try {
+        $currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+        Write-Log "Contexto de execucao: $currentUser" "INFO"
+    } catch {}
 
     if (-not (Test-Path $global:TrivorWingetDir)) {
         New-Item -ItemType Directory -Force -Path $global:TrivorWingetDir | Out-Null
@@ -874,7 +912,7 @@ function Invoke-ClientInstallation {
 function Invoke-ClientUpdateOnly {
     param([Parameter(Mandatory)] [psobject]$ClientConfig)
 
-    Initialize-Winget
+    [void](Initialize-Winget)
     Write-Log "Starting UPDATE ONLY mode for client: $($ClientConfig.Client)" "INFO"
 
     foreach ($app in $ClientConfig.Applications) {
@@ -891,7 +929,7 @@ function Invoke-ClientUpdateOnly {
 function Invoke-ClientManualInstall {
     param([Parameter(Mandatory)] [psobject]$ClientConfig)
 
-    Initialize-Winget
+    [void](Initialize-Winget)
     Write-Log "Starting MANUAL mode for client: $($ClientConfig.Client)" "INFO"
 
     foreach ($app in $ClientConfig.Applications) {
