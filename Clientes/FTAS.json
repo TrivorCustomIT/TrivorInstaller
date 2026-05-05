@@ -15,6 +15,74 @@
       "Id": "chrome",
       "Name": "Google Chrome",
       "WingetId": "Google.Chrome"
+    },
+    {
+      "Id": "adobe-reader",
+      "Name": "Adobe Reader DC (64-bit)",
+      "WingetId": "Adobe.Acrobat.Reader.64-bit"
+    },
+    {
+      "Id": "zoom",
+      "Name": "Zoom Workplace",
+      "WingetId": "Zoom.Zoom"
+    },
+    {
+      "Id": "rmm-agent",
+      "Name": "Trivor RMM Agent",
+      "Detection": {
+        "Method": "Hybrid",
+        "RegistryDisplayName": "Advanced Monitoring Agent", 
+        "MinVersion": "10.14.4",
+        "ServiceName": "Advanced Monitoring Agent",
+        "ServiceDisplayName": "Advanced Monitoring Agent"
+      },
+      "Install": {
+        "Method": "RepoExePublic",
+        "Owner": "TrivorCustomIT",
+        "Repo": "TrivorInstallerRepository",
+        "Branch": "main",
+        "RelativePath": "Installers/clients/ftas/AGENT_336535_V10_15_3_RW.EXE",
+        "SilentArgs": "/silent /norestart",
+        "CacheFileName": "AGENT_336535_V10_15_3_RW.EXE",
+        "Sha256": "82CD9950CCE2B3927E4658856E35D2E1B52AD2059B1CC0B7A9A69A6F8C7F4A8E",
+        "CleanAfterInstall": true
+      }
+    },
+    {
+      "Id": "takecontrol",
+      "Name": "Take Control Agent",
+      "Detection": {
+        "Method": "Hybrid",
+        "RegistryDisplayName": "Agente Take Control",
+        "ServiceName": "Agente Take Control",
+        "ServiceDisplayName": "Agente Take Control"
+      },
+      "Install": {
+        "Method": "UrlExe",
+        "Url": "https://api.us0.swi-rc.com/download/getpcinstall.php?iid=a5aadc28-4889-11f1-b22b-0affd1392461",
+        "SilentArgs": "/silent",
+        "CacheFileName": "TakeControlAgent.exe",
+        "Sha256": "",
+        "CleanAfterInstall": true
+      }
+    },
+    {
+      "Id": "kaspersky",
+      "Name": "Kaspersky Endpoint Security",
+      "Detection": {
+        "Method": "Hybrid",
+        "RegistryDisplayName": "Kaspersky Endpoint Security",
+        "ServiceName": "Kaspersky Endpoint Security Service",
+        "ServiceDisplayName": "Kaspersky Endpoint Security"
+      },
+      "Install": {
+        "Method": "UrlExe",
+        "Url": "https://s231.cloud.kaspersky.com:8080/getPackage?vServerName=ff982091-0145-42cf-8834-5a0fe01da69e",
+        "SilentArgs": "/silent",
+        "CacheFileName": "KasperskyEndpointSecurity.exe",
+        "Sha256": "",
+        "CleanAfterInstall": true
+      }
     }
   ]
 }
