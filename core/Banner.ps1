@@ -6,7 +6,7 @@ function Get-InstallerVersion {
             return $tags[0].name
         }
     } catch {}
-    return "v3.34-download-fix"
+    return "v3.36-rmm-user-detection"
 }
 
 function Show-Banner {

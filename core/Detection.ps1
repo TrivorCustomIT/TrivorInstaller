@@ -3,16 +3,91 @@
 # ==============================
 
 #region Winget
+function Get-WingetAppState {
+    param([Parameter(Mandatory)] [string]$WingetId)
+
+    if (-not $global:TrivorWingetDetectionCache) {
+        $global:TrivorWingetDetectionCache = @{}
+    }
+
+    if ($global:TrivorWingetDetectionCache.ContainsKey($WingetId)) {
+        return $global:TrivorWingetDetectionCache[$WingetId]
+    }
+
+    $state = [pscustomobject]@{
+        Installed = $false
+        Source    = $null
+        Version   = $null
+        RawOutput = $null
+    }
+
+    try {
+        $result = $null
+        $output = $null
+        $source = "Winget"
+
+        if (Get-Command Invoke-WingetAsUser -ErrorAction SilentlyContinue) {
+            $result = Invoke-WingetAsUser `
+                -Arguments "list --id `"$WingetId`" --exact --source winget --accept-source-agreements --disable-interactivity" `
+                -OperationName "detect_$WingetId"
+
+            if ($result -and $result.StdOut -and (Test-Path $result.StdOut)) {
+                $output = Get-Content $result.StdOut -Raw -ErrorAction SilentlyContinue
+                if (Get-Command Test-TrivorSystemContext -ErrorAction SilentlyContinue) {
+                    if (Test-TrivorSystemContext) { $source = "Winget(User)" }
+                }
+            }
+        }
+        else {
+            $output = winget list --id $WingetId --exact --source winget --accept-source-agreements --disable-interactivity 2>$null | Out-String
+        }
+
+        $state.RawOutput = $output
+
+        if (-not [string]::IsNullOrWhiteSpace($output) -and $output -match [regex]::Escape($WingetId)) {
+            $version = $null
+            $lines = $output -split "`r?`n"
+            $matchLine = $lines | Where-Object { $_ -match [regex]::Escape($WingetId) } | Select-Object -First 1
+
+            if ($matchLine) {
+                $normalized = ($matchLine -replace '\s+', ' ').Trim()
+                $parts = $normalized.Split(' ')
+
+                $idIndex = -1
+                for ($idx = 0; $idx -lt $parts.Count; $idx++) {
+                    if ($parts[$idx] -eq $WingetId) {
+                        $idIndex = $idx
+                        break
+                    }
+                }
+
+                if ($idIndex -ge 0 -and ($idIndex + 1) -lt $parts.Count) {
+                    $version = $parts[$idIndex + 1]
+                }
+            }
+
+            $state = [pscustomobject]@{
+                Installed = $true
+                Source    = $source
+                Version   = $version
+                RawOutput = $output
+            }
+
+            Write-Log ("{0} detected: {1}" -f $source, $WingetId) "INFO"
+        }
+    }
+    catch {
+        Write-Log ("Winget detection failed for {0}: {1}" -f $WingetId, $_.Exception.Message) "WARN"
+    }
+
+    $global:TrivorWingetDetectionCache[$WingetId] = $state
+    return $state
+}
+
 function Test-WingetApp {
     param([Parameter(Mandatory)] [string]$WingetId)
-    try {
-        $result = winget list --id $WingetId --exact --accept-source-agreements 2>$null
-        if ($result -match [regex]::Escape($WingetId)) {
-            Write-Log "Winget detected: $WingetId" "INFO"
-            return $true
-        }
-    } catch {}
-    return $false
+    $state = Get-WingetAppState -WingetId $WingetId
+    return [bool]$state.Installed
 }
 #endregion
 
@@ -132,8 +207,12 @@ function Get-ApplicationState {
     $state = @{ Installed = $false; Source = $null; Version = $null }
 
     if ($App.PSObject.Properties.Match("WingetId").Count -gt 0 -and $App.WingetId) {
-        if (Test-WingetApp -WingetId $App.WingetId) {
-            $state.Installed = $true; $state.Source = "Winget"; return $state
+        $wingetState = Get-WingetAppState -WingetId $App.WingetId
+        if ($wingetState -and $wingetState.Installed) {
+            $state.Installed = $true
+            if ($wingetState.Source) { $state.Source = $wingetState.Source } else { $state.Source = "Winget" }
+            $state.Version = $wingetState.Version
+            return $state
         }
     }
 

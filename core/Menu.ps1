@@ -104,6 +104,7 @@ function Show-AppGrid {
     Write-Host ""
 
     $global:TrivorManualStatusCache = @{}
+    $global:TrivorWingetDetectionCache = @{}
 
     $header = "{0,4}  {1,-4} {2,-48} {3,-16} {4,-12} {5}" -f "Num", "St", "Aplicacao", "Status", "Fonte", "Versao"
     Write-Host $header -ForegroundColor DarkCyan

@@ -136,7 +136,7 @@ function Invoke-TrivorDownloadWithProgress {
                 $request.MaximumAutomaticRedirections = 10
                 $request.Timeout = 300000
                 $request.ReadWriteTimeout = 300000
-                $request.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) TrivorInstaller/3.34"
+                $request.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) TrivorInstaller/3.36"
                 $request.Accept = "*/*"
 
                 $response = $request.GetResponse()
@@ -247,7 +247,7 @@ function Invoke-TrivorDownloadWithProgress {
             }
         }
 
-        Write-Log Write-Log ("Download falhou apos {0} tentativas: {1}" -f $MaxAttempts, $Url) "ERROR"
+        Write-Log ("Download falhou apos {0} tentativas: {1}" -f $MaxAttempts, $Url) "ERROR"
         return $false
     }
     catch {
