@@ -55,7 +55,7 @@ function Ensure-DownloadedWithSha256 {
             try { Remove-Item $DestinationFile -Force -ErrorAction SilentlyContinue } catch {}
         }
 
-        Write-Log "Downloading attempt ${i}: $RelativePath" "INFO"
+        Write-Log ("Downloading attempt {0}: {1}" -f $i, $RelativePath) "INFO"
         $ok = Get-PublicRepoFile -Owner $Owner -Repo $Repo -Branch $Branch -RelativePath $RelativePath -DestinationFile $DestinationFile
         if (-not $ok) { continue }
 
@@ -69,7 +69,7 @@ function Ensure-DownloadedWithSha256 {
         try { Remove-Item $DestinationFile -Force -ErrorAction SilentlyContinue } catch {}
     }
 
-    Write-Log "Failed SHA256 validation after $MaxAttempts attempts." "ERROR"
+    Write-Log ("Failed SHA256 validation after {0} attempts." -f $MaxAttempts) "ERROR"
     return $false
 }
 #endregion
@@ -247,7 +247,7 @@ function Invoke-TrivorDownloadWithProgress {
             }
         }
 
-        Write-Log "Download falhou apos $MaxAttempts tentativas: $Url" "ERROR"
+        Write-Log Write-Log ("Download falhou apos {0} tentativas: {1}" -f $MaxAttempts, $Url) "ERROR"
         return $false
     }
     catch {
