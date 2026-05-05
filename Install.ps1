@@ -4,17 +4,35 @@ Write-Host "Trivor Installer iniciado"
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
 if (-not $isAdmin) {
-    Write-Host "Elevando privilegios..."
-    $tempScript = Join-Path $env:TEMP "TrivorLauncher.ps1"
-    $url = "https://raw.githubusercontent.com/TrivorCustomIT/TrivorInstaller/main/Install.ps1"
-    Invoke-WebRequest -Uri $url -OutFile $tempScript -UseBasicParsing
-    Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$tempScript`"" -Verb RunAs
-    exit
+    # Detecta contexto SYSTEM/RMM: nao tenta elevar via UAC pois nao ha desktop interativo
+    # e o processo ja possui privilegios suficientes (ou deve ser tratado como tal)
+    $currentIdentity = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+    $isSystemContext = $false
+
+    if ($currentIdentity -eq "NT AUTHORITY\SYSTEM") { $isSystemContext = $true }
+    if ($currentIdentity -match '^NT (AUTHORITY\\(LOCAL SERVICE|NETWORK SERVICE)|SERVICE\\)') { $isSystemContext = $true }
+    if ([string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) { $isSystemContext = $true }
+    if ($env:LOCALAPPDATA -match '\\(systemprofile|LocalService|NetworkService)\\') { $isSystemContext = $true }
+    foreach ($sig in @($env:NABLE_AGENT_HOME, $env:SOLARWINDS_AGENT, $env:NAAGENT_HOME, $env:DATTO_AGENT, $env:NINJAONE_AGENT, $env:ATERA_AGENT)) {
+        if (-not [string]::IsNullOrWhiteSpace($sig)) { $isSystemContext = $true }
+    }
+
+    if ($isSystemContext) {
+        Write-Host "Contexto SYSTEM/RMM detectado. Continuando sem elevacao via UAC..."
+        # Segue execucao normalmente - Engine.ps1 tratara Winget via usuario logado
+    } else {
+        Write-Host "Elevando privilegios..."
+        $tempScript = Join-Path $env:TEMP "TrivorLauncher.ps1"
+        $url = "https://raw.githubusercontent.com/TrivorCustomIT/TrivorInstaller/main/Install.ps1"
+        Invoke-WebRequest -Uri $url -OutFile $tempScript -UseBasicParsing
+        Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$tempScript`"" -Verb RunAs
+        exit
+    }
 }
 
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
 
-$global:TrivorVersion  = "3.36-rmm-user-detection"
+$global:TrivorVersion  = "3.35-manual-status"
 $global:TrivorBasePath = Join-Path $env:TEMP "TrivorInstaller"
 
 function Invoke-Cleanup {
