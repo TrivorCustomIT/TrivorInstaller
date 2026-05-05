@@ -237,7 +237,7 @@ function Invoke-TrivorDownloadWithProgress {
                 return $true
             }
             catch {
-                Write-Log "Falha no download tentativa $attempt/$MaxAttempts: $($_.Exception.Message)" "WARN"
+                Write-Log "Falha no download tentativa $attempt/$($MaxAttempts): $($_.Exception.Message)" "WARN"
                 try { if (Test-Path $partialFile) { Remove-Item $partialFile -Force -ErrorAction SilentlyContinue } } catch {}
                 try { if (Test-Path $OutFile) { Remove-Item $OutFile -Force -ErrorAction SilentlyContinue } } catch {}
 
