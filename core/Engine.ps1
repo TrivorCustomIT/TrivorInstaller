@@ -74,26 +74,51 @@ function Ensure-DownloadedWithSha256 {
 }
 #endregion
 
-#region Winget - roda no contexto do usuario logado via Scheduled Task
+#region Winget - contexto normal ou RMM/SYSTEM via usuario logado
 
 $global:TrivorWingetDir = Join-Path $env:SystemDrive "TrivorInstaller\Winget"
 $global:TrivorWingetExe = $null
 
+function Test-TrivorSystemContext {
+    try {
+        $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+        return ($identity -eq "NT AUTHORITY\SYSTEM")
+    }
+    catch {
+        return $false
+    }
+}
+
+function Get-TrivorLoggedOnUser {
+    try {
+        $user = (Get-CimInstance Win32_ComputerSystem -ErrorAction Stop).UserName
+        if ([string]::IsNullOrWhiteSpace($user)) { return $null }
+        return $user
+    }
+    catch {
+        Write-Log "Falha ao detectar usuario logado: $($_.Exception.Message)" "WARN"
+        return $null
+    }
+}
+
 function Get-WingetExecutable {
-    $candidates = @(
-        (Join-Path $env:LOCALAPPDATA "Microsoft\WindowsApps\winget.exe"),
-        "$env:SystemRoot\System32\winget.exe"
-    )
+    # Esta funcao so deve localizar Winget no contexto atual.
+    # Em RMM/SYSTEM, o Winget sera localizado dentro do script executado como usuario logado.
+    $cmd = Get-Command winget.exe -ErrorAction SilentlyContinue
+    if ($cmd -and $cmd.Source) { return $cmd.Source }
+
+    $candidates = @()
+
+    if ($env:LOCALAPPDATA) {
+        $candidates += (Join-Path $env:LOCALAPPDATA "Microsoft\WindowsApps\winget.exe")
+    }
+
+    $candidates += "$env:SystemRoot\System32\winget.exe"
 
     foreach ($candidate in $candidates) {
         if ($candidate -and (Test-Path $candidate)) {
             return $candidate
         }
-    }
-
-    $cmd = Get-Command winget.exe -ErrorAction SilentlyContinue
-    if ($cmd -and $cmd.Source) {
-        return $cmd.Source
     }
 
     return $null
@@ -106,10 +131,23 @@ function Initialize-Winget {
         New-Item -ItemType Directory -Force -Path $global:TrivorWingetDir | Out-Null
     }
 
+    if (Test-TrivorSystemContext) {
+        $loggedUser = Get-TrivorLoggedOnUser
+        if ($loggedUser) {
+            Write-Log "Contexto SYSTEM/RMM detectado. Winget sera executado no usuario logado: $loggedUser" "INFO"
+            $global:TrivorWingetExe = $null
+            return $true
+        }
+
+        Write-Log "Contexto SYSTEM/RMM detectado, mas nenhum usuario interativo esta logado. Winget indisponivel." "ERROR"
+        $global:TrivorWingetExe = $null
+        return $false
+    }
+
     $global:TrivorWingetExe = Get-WingetExecutable
 
     if (-not $global:TrivorWingetExe) {
-        Write-Log "Winget nao encontrado." "ERROR"
+        Write-Log "Winget nao encontrado no contexto atual." "ERROR"
         return $false
     }
 
@@ -128,12 +166,7 @@ function Invoke-WingetDirect {
     }
 
     if (-not $global:TrivorWingetExe) {
-        return @{
-            Success  = $false
-            ExitCode = -1
-            StdOut   = $null
-            StdErr   = $null
-        }
+        return @{ Success = $false; ExitCode = -1; StdOut = $null; StdErr = $null }
     }
 
     $stamp = Get-Date -Format "yyyyMMdd_HHmmss"
@@ -151,48 +184,29 @@ function Invoke-WingetDirect {
             -RedirectStandardOutput $stdout `
             -RedirectStandardError $stderr
 
-        return @{
-            Success  = ($p.ExitCode -eq 0)
-            ExitCode = $p.ExitCode
-            StdOut   = $stdout
-            StdErr   = $stderr
-        }
+        return @{ Success = ($p.ExitCode -eq 0); ExitCode = $p.ExitCode; StdOut = $stdout; StdErr = $stderr }
     }
     catch {
         Write-Log "Falha ao executar winget diretamente: $($_.Exception.Message)" "ERROR"
-        return @{
-            Success  = $false
-            ExitCode = -1
-            StdOut   = $stdout
-            StdErr   = $stderr
-        }
+        return @{ Success = $false; ExitCode = -1; StdOut = $stdout; StdErr = $stderr }
     }
 }
 
-function Invoke-WingetAsUser {
+function Invoke-WingetAsLoggedUserTask {
     param(
         [Parameter(Mandatory)] [string]$Arguments,
         [Parameter(Mandatory)] [string]$OperationName
     )
 
-    $loggedUser = (Get-CimInstance Win32_ComputerSystem).UserName
+    $loggedUser = Get-TrivorLoggedOnUser
 
     if (-not $loggedUser) {
-        Write-Log "Nenhum usuario logado. Rodando winget no contexto atual." "WARN"
-        return (Invoke-WingetDirect -Arguments $Arguments -OperationName $OperationName)
+        Write-Log "Nenhum usuario logado. Nao e possivel executar Winget em contexto de usuario." "ERROR"
+        return @{ Success = $false; ExitCode = -1; StdOut = $null; StdErr = $null }
     }
 
-    if (-not $global:TrivorWingetExe) {
-        $null = Initialize-Winget
-    }
-
-    if (-not $global:TrivorWingetExe) {
-        return @{
-            Success  = $false
-            ExitCode = -1
-            StdOut   = $null
-            StdErr   = $null
-        }
+    if (-not (Test-Path $global:TrivorWingetDir)) {
+        New-Item -ItemType Directory -Force -Path $global:TrivorWingetDir | Out-Null
     }
 
     $stamp = Get-Date -Format "yyyyMMdd_HHmmss"
@@ -204,8 +218,46 @@ function Invoke-WingetAsUser {
     $runnerContent = @"
 `$ErrorActionPreference = 'Continue'
 `$ProgressPreference = 'SilentlyContinue'
-& `"$global:TrivorWingetExe`" $Arguments 1>`"$stdout`" 2>`"$stderr`"
-exit `$LASTEXITCODE
+
+function Resolve-UserWinget {
+    `$cmd = Get-Command winget.exe -ErrorAction SilentlyContinue
+    if (`$cmd -and `$cmd.Source) { return `$cmd.Source }
+
+    `$candidates = @()
+    if (`$env:LOCALAPPDATA) {
+        `$candidates += (Join-Path `$env:LOCALAPPDATA 'Microsoft\WindowsApps\winget.exe')
+    }
+    `$candidates += (Join-Path `$env:USERPROFILE 'AppData\Local\Microsoft\WindowsApps\winget.exe')
+    `$candidates += "`$env:SystemRoot\System32\winget.exe"
+
+    foreach (`$candidate in `$candidates) {
+        if (`$candidate -and (Test-Path `$candidate)) { return `$candidate }
+    }
+
+    return `$null
+}
+
+"==== Trivor Winget Runner ====" | Out-File -FilePath "$stdout" -Append -Encoding UTF8
+"User=`$env:USERDOMAIN\`$env:USERNAME" | Out-File -FilePath "$stdout" -Append -Encoding UTF8
+"Operation=$OperationName" | Out-File -FilePath "$stdout" -Append -Encoding UTF8
+"Arguments=$Arguments" | Out-File -FilePath "$stdout" -Append -Encoding UTF8
+
+`$wingetExe = Resolve-UserWinget
+if (-not `$wingetExe) {
+    "Winget nao encontrado no contexto do usuario logado." | Out-File -FilePath "$stderr" -Append -Encoding UTF8
+    exit 1
+}
+
+"WingetExe=`$wingetExe" | Out-File -FilePath "$stdout" -Append -Encoding UTF8
+
+try {
+    `$process = Start-Process -FilePath `$wingetExe -ArgumentList "$Arguments" -Wait -PassThru -NoNewWindow -RedirectStandardOutput "$stdout" -RedirectStandardError "$stderr"
+    exit `$process.ExitCode
+}
+catch {
+    "Falha ao executar Winget: `$(`$_.Exception.Message)" | Out-File -FilePath "$stderr" -Append -Encoding UTF8
+    exit 1
+}
 "@
 
     Set-Content -Path $runner -Value $runnerContent -Encoding UTF8 -Force
@@ -213,44 +265,53 @@ exit `$LASTEXITCODE
     $taskName = "TrivorWinget_$([guid]::NewGuid().ToString('N'))"
     $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$runner`""
     $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddSeconds(3)
-    $principal = New-ScheduledTaskPrincipal -UserId $loggedUser -LogonType Interactive -RunLevel Limited
+    $principal = New-ScheduledTaskPrincipal -UserId $loggedUser -LogonType Interactive -RunLevel Highest
 
     try {
         Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Force | Out-Null
+        Write-Log "Scheduled Task criada para executar Winget como usuario logado: $loggedUser | Task=$taskName" "INFO"
         Start-ScheduledTask -TaskName $taskName
 
-        $timeout = 600
+        $timeout = 900
         $elapsed = 0
+
+        Start-Sleep -Seconds 5
+
         do {
             Start-Sleep -Seconds 2
             $elapsed += 2
             $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-            $state = $task.State
+            $state = if ($task) { $task.State } else { "Unknown" }
         } while ($state -eq "Running" -and $elapsed -lt $timeout)
 
         $info = Get-ScheduledTaskInfo -TaskName $taskName -ErrorAction SilentlyContinue
         $exitCode = if ($info) { [int]$info.LastTaskResult } else { -1 }
 
-        return @{
-            Success  = ($exitCode -eq 0)
-            ExitCode = $exitCode
-            StdOut   = $stdout
-            StdErr   = $stderr
-        }
+        return @{ Success = ($exitCode -eq 0); ExitCode = $exitCode; StdOut = $stdout; StdErr = $stderr }
     }
     catch {
-        Write-Log "Falha ao executar winget via Scheduled Task: $($_.Exception.Message)" "ERROR"
-        return @{
-            Success  = $false
-            ExitCode = -1
-            StdOut   = $stdout
-            StdErr   = $stderr
-        }
+        Write-Log "Falha ao executar winget via usuario logado/Scheduled Task: $($_.Exception.Message)" "ERROR"
+        return @{ Success = $false; ExitCode = -1; StdOut = $stdout; StdErr = $stderr }
     }
     finally {
         Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue | Out-Null
         Remove-Item $runner -Force -ErrorAction SilentlyContinue
     }
+}
+
+function Invoke-WingetAsUser {
+    param(
+        [Parameter(Mandatory)] [string]$Arguments,
+        [Parameter(Mandatory)] [string]$OperationName
+    )
+
+    if (Test-TrivorSystemContext) {
+        Write-Log "Contexto SYSTEM/RMM detectado. Redirecionando Winget para usuario logado." "INFO"
+        return (Invoke-WingetAsLoggedUserTask -Arguments $Arguments -OperationName $OperationName)
+    }
+
+    Write-Log "Contexto normal detectado. Executando Winget no contexto atual." "INFO"
+    return (Invoke-WingetDirect -Arguments $Arguments -OperationName $OperationName)
 }
 
 function Write-WingetResult {
@@ -260,11 +321,31 @@ function Write-WingetResult {
         [Parameter(Mandatory)] $Result
     )
 
-    $msg = "$Action | Target=$Target | ExitCode=$($Result.ExitCode) | StdOut=$($Result.StdOut) | StdErr=$($Result.StdErr)"
+    $stdOutText = ""
+    $stdErrText = ""
+
+    if ($Result.StdOut -and (Test-Path $Result.StdOut)) {
+        try { $stdOutText = (Get-Content $Result.StdOut -Raw -ErrorAction SilentlyContinue) } catch {}
+    }
+
+    if ($Result.StdErr -and (Test-Path $Result.StdErr)) {
+        try { $stdErrText = (Get-Content $Result.StdErr -Raw -ErrorAction SilentlyContinue) } catch {}
+    }
+
+    $msg = "$Action | Target=$Target | ExitCode=$($Result.ExitCode) | StdOutFile=$($Result.StdOut) | StdErrFile=$($Result.StdErr)"
+
     if ($Result.Success) {
         Write-Log $msg "INFO"
     } else {
         Write-Log $msg "ERROR"
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($stdOutText)) {
+        Write-Log "$Action stdout [$Target]: $stdOutText" "INFO"
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($stdErrText)) {
+        Write-Log "$Action stderr [$Target]: $stdErrText" "ERROR"
     }
 }
 

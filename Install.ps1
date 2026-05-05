@@ -14,7 +14,7 @@ if (-not $isAdmin) {
 
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
 
-$global:TrivorVersion  = "3.31"
+$global:TrivorVersion  = "3.33-rmm-winget"
 $global:TrivorBasePath = Join-Path $env:TEMP "TrivorInstaller"
 
 function Invoke-Cleanup {
