@@ -65,6 +65,24 @@
         "Sha256": "",
         "CleanAfterInstall": true
       }
+    },
+    {
+      "Id": "kaspersky",
+      "Name": "Kaspersky Endpoint Security",
+      "Detection": {
+        "Method": "Hybrid",
+        "RegistryDisplayName": "Kaspersky Endpoint Security",
+        "ServiceName": "Kaspersky Endpoint Security Service",
+        "ServiceDisplayName": "Kaspersky Endpoint Security"
+      },
+      "Install": {
+        "Method": "UrlExe",
+        "Url": "https://s219.cloud.kaspersky.com:8080/getPackage?vServerName=dac2c83e-7114-48d9-898b-edbaf4674dc6",
+        "SilentArgs": "/silent",
+        "CacheFileName": "KasperskyEndpointSecurity.exe",
+        "Sha256": "",
+        "CleanAfterInstall": true
+      }
     }
   ]
 }
