@@ -74,6 +74,74 @@ function Ensure-DownloadedWithSha256 {
 }
 #endregion
 
+function Invoke-TrivorDownloadWithProgress {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Url,
+
+        [Parameter(Mandatory)]
+        [string]$OutFile
+    )
+
+    Write-Log "Iniciando download: $Url"
+
+    $request = [System.Net.HttpWebRequest]::Create($Url)
+    $request.UserAgent = "TrivorInstaller"
+    $response = $request.GetResponse()
+
+    $totalBytes = $response.ContentLength
+    $responseStream = $response.GetResponseStream()
+
+    $fileStream = [System.IO.File]::Create($OutFile)
+
+    try {
+        $buffer = New-Object byte[] 8192
+        $totalRead = 0
+
+        do {
+            $read = $responseStream.Read($buffer, 0, $buffer.Length)
+
+            if ($read -gt 0) {
+                $fileStream.Write($buffer, 0, $read)
+                $totalRead += $read
+
+                if ($totalBytes -gt 0) {
+                    $percent = [math]::Round(($totalRead / $totalBytes) * 100, 2)
+                    $mbRead = [math]::Round($totalRead / 1MB, 2)
+                    $mbTotal = [math]::Round($totalBytes / 1MB, 2)
+
+                    Write-Progress `
+                        -Activity "Baixando arquivo" `
+                        -Status "$mbRead MB de $mbTotal MB ($percent%)" `
+                        -PercentComplete $percent
+                }
+                else {
+                    $mbRead = [math]::Round($totalRead / 1MB, 2)
+
+                    Write-Progress `
+                        -Activity "Baixando arquivo" `
+                        -Status "$mbRead MB baixados" `
+                        -PercentComplete 0
+                }
+            }
+
+        } while ($read -gt 0)
+
+        Write-Progress -Activity "Baixando arquivo" -Completed
+        Write-Log "Download concluido: $OutFile"
+        return $true
+    }
+    catch {
+        Write-Log "Erro no download: $($_.Exception.Message)" "ERROR"
+        return $false
+    }
+    finally {
+        $fileStream.Close()
+        $responseStream.Close()
+        $response.Close()
+    }
+}
+
 #region Winget - contexto normal ou RMM/SYSTEM via usuario logado
 
 $global:TrivorWingetDir = Join-Path $env:SystemDrive "TrivorInstaller\Winget"
@@ -444,7 +512,14 @@ function Install-Application {
             if (-not (Test-Path $localFile)) {
                 Write-Log "Downloading (UrlExe): $($App.Install.Url)" "INFO"
                 try {
-                    Invoke-WebRequest -Uri $App.Install.Url -OutFile $localFile -UseBasicParsing -ErrorAction Stop
+                    $ok = Invoke-TrivorDownloadWithProgress `
+    -Url $App.Install.Url `
+    -OutFile $localFile
+
+if (-not $ok) {
+    Write-Log "Download failed: $($App.Install.Url)" "ERROR"
+    return
+}
                 } catch {
                     Write-Log "Download failed: $($App.Install.Url)" "ERROR"
                     return
@@ -461,7 +536,14 @@ function Install-Application {
         } else {
             Write-Log "Downloading (UrlExe, no hash): $($App.Install.Url)" "INFO"
             try {
-                Invoke-WebRequest -Uri $App.Install.Url -OutFile $localFile -UseBasicParsing -ErrorAction Stop
+                $ok = Invoke-TrivorDownloadWithProgress `
+    -Url $App.Install.Url `
+    -OutFile $localFile
+
+if (-not $ok) {
+    Write-Log "Download failed: $($App.Install.Url)" "ERROR"
+    return
+}
             } catch {
                 Write-Log "Download failed: $($App.Install.Url)" "ERROR"
                 return
