@@ -1,5 +1,6 @@
 ﻿{
  "Client": "CIRKLO",
+ "HostnamePrefix": "CRK",
   "Applications": [
     {
       "Id": "7zip",
@@ -15,6 +16,56 @@
       "Id": "chrome",
       "Name": "Google Chrome",
       "WingetId": "Google.Chrome"
+    },
+    {
+      "Id": "adobe-reader",
+      "Name": "Adobe Reader DC (64-bit)",
+      "WingetId": "Adobe.Acrobat.Reader.64-bit"
+    },
+    {
+      "Id": "zoom",
+      "Name": "Zoom Workplace",
+      "WingetId": "Zoom.Zoom"
+    },
+    {
+      "Id": "takecontrol",
+      "Name": "Take Control Agent",
+      "Detection": {
+        "Method": "Hybrid",
+        "RegistryDisplayName": "Agente Take Control",
+        "ServiceName": "Agente Take Control",
+        "ServiceDisplayName": "Agente Take Control"
+      },
+      "Install": {
+        "Method": "UrlExe",
+        "Url": "https://api.us0.swi-rc.com/download/getpcinstall.php?iid=1df11d58-3510-11f1-b22b-0affd1392461",
+        "SilentArgs": "/silent",
+        "CacheFileName": "TakeControlAgent.exe",
+        "Sha256": "",
+        "CleanAfterInstall": true
+      }
+    },
+    {
+      "Id": "rmm-agent",
+      "Name": "Trivor RMM Agent",
+      "Detection": {
+        "Method": "Hybrid",
+        "RegistryDisplayName": "Advanced Monitoring Agent",
+        "MinVersion": "10.14.4",
+        "ServiceName": "Advanced Monitoring Agent",
+        "ServiceDisplayName": "Advanced Monitoring Agent"
+      },
+      "Install": {
+        "Method": "RepoExePublic",
+        "Owner": "TrivorCustomIT",
+        "Repo": "TrivorInstallerRepository",
+        "Branch": "main",
+        "RelativePath": "Installers/clients/cirklo/AGENT_471980_V10_15_3_RW.EXE",
+        "SilentArgs": "/silent /norestart",
+        "CacheFileName": "AGENT_471980_V10_15_3_RW.EXE",
+        "Sha256": "CEDEDF931A909AB83FD5264F8EF738E2ABC1AAB336BC87A4D5092302F682ACC6",
+        "CleanAfterInstall": true
+      }
     }
   ]
 }
