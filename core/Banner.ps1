@@ -1,12 +1,17 @@
+$global:TrivorVersionCache = $null
+
 function Get-InstallerVersion {
+    if ($global:TrivorVersionCache) { return $global:TrivorVersionCache }
     try {
         $headers = @{ "User-Agent" = "TrivorInstaller" }
         $tags = Invoke-RestMethod -Uri "https://api.github.com/repos/TrivorCustomIT/TrivorInstaller/tags" -Headers $headers -ErrorAction Stop
         if ($tags -and $tags.Count -gt 0) {
-            return $tags[0].name
+            $global:TrivorVersionCache = $tags[0].name
+            return $global:TrivorVersionCache
         }
     } catch {}
-    return "v3.36-rmm-user-detection"
+    $global:TrivorVersionCache = "v3.36-rmm-user-detection"
+    return $global:TrivorVersionCache
 }
 
 function Show-Banner {

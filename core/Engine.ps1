@@ -247,7 +247,7 @@ function Invoke-TrivorDownloadWithProgress {
             }
         }
 
-        Write-Log Write-Log ("Download falhou apos {0} tentativas: {1}" -f $MaxAttempts, $Url) "ERROR"
+        Write-Log ("Download falhou apos {0} tentativas: {1}" -f $MaxAttempts, $Url) "ERROR"
         return $false
     }
     catch {
@@ -615,11 +615,11 @@ function Install-Application {
         return
     }
 
+    $cacheRoot = Join-Path $env:TEMP "TrivorInstaller\cache"
+    New-Item -ItemType Directory -Force -Path $cacheRoot | Out-Null
+
     # 2) RepoExePublic
     if ($App.PSObject.Properties.Match("Install").Count -gt 0 -and $App.Install -and $App.Install.Method -eq "RepoExePublic") {
-
-        $cacheRoot = Join-Path $env:TEMP "TrivorInstaller\cache"
-        New-Item -ItemType Directory -Force -Path $cacheRoot | Out-Null
 
         $cacheFileName = if ($App.Install.CacheFileName) { $App.Install.CacheFileName } else { [System.IO.Path]::GetFileName($App.Install.RelativePath) }
         $localFile = Join-Path $cacheRoot $cacheFileName
@@ -652,9 +652,6 @@ function Install-Application {
 
     # 3) UrlExe
     if ($App.PSObject.Properties.Match("Install").Count -gt 0 -and $App.Install -and $App.Install.Method -eq "UrlExe") {
-
-        $cacheRoot = Join-Path $env:TEMP "TrivorInstaller\cache"
-        New-Item -ItemType Directory -Force -Path $cacheRoot | Out-Null
 
         $cacheFileName = if ($App.Install.CacheFileName) { $App.Install.CacheFileName } else { [System.IO.Path]::GetFileName($App.Install.Url) }
         if ([string]::IsNullOrWhiteSpace($cacheFileName)) {
@@ -743,9 +740,6 @@ function Install-Application {
 
     # 4) RegFile
     if ($App.PSObject.Properties.Match("Install").Count -gt 0 -and $App.Install -and $App.Install.Method -eq "RegFile") {
-
-        $cacheRoot = Join-Path $env:TEMP "TrivorInstaller\cache"
-        New-Item -ItemType Directory -Force -Path $cacheRoot | Out-Null
 
         $cacheFileName = if ($App.Install.CacheFileName) { $App.Install.CacheFileName } else { [System.IO.Path]::GetFileName($App.Install.RelativePath) }
         $localFile = Join-Path $cacheRoot $cacheFileName

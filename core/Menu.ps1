@@ -104,7 +104,6 @@ function Show-AppGrid {
     Write-Host ""
 
     $global:TrivorManualStatusCache = @{}
-    $global:TrivorWingetDetectionCache = @{}
 
     $header = "{0,4}  {1,-4} {2,-48} {3,-16} {4,-12} {5}" -f "Num", "St", "Aplicacao", "Status", "Fonte", "Versao"
     Write-Host $header -ForegroundColor DarkCyan
@@ -189,7 +188,7 @@ function Show-ClientMenu {
 
             $selectedApp = $apps[$appNum - 1]
             Write-Host ""
-            $r = Invoke-AppActionManual -App $selectedApp
+            Invoke-AppActionManual -App $selectedApp | Out-Null
             Write-Host ""
             Wait-Enter
             continue

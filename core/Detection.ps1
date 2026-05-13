@@ -4,6 +4,8 @@
 
 #region Registry helpers
 
+$global:TrivorUninstallPathsCache = $null
+
 function Get-TrivorLoggedOnUserSID {
     try {
         $cs = Get-CimInstance Win32_ComputerSystem -ErrorAction Stop
@@ -22,6 +24,8 @@ function Get-TrivorLoggedOnUserSID {
 }
 
 function Get-RegistryUninstallPaths {
+    if ($global:TrivorUninstallPathsCache) { return $global:TrivorUninstallPathsCache }
+
     $paths = @(
         "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*",
         "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
@@ -29,6 +33,7 @@ function Get-RegistryUninstallPaths {
 
     if (-not (Test-TrivorSystemContext)) {
         $paths += "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*"
+        $global:TrivorUninstallPathsCache = $paths
         return $paths
     }
 
@@ -38,6 +43,7 @@ function Get-RegistryUninstallPaths {
         $paths += "Registry::HKU\$sid\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*"
         $paths += "Registry::HKU\$sid\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
     }
+    $global:TrivorUninstallPathsCache = $paths
     return $paths
 }
 

@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(\\(Get-ChildItem -Path \"c:\\\\Users\\\\FernandoOliveira\\\\Documents\\\\TrivorInstaller\\\\TrivorInstaller\\\\Clientes\" -Force\\).Count)",
+      "Bash(Get-ChildItem -Force)",
+      "Bash(Select-Object Name)"
+    ]
+  }
+}
