@@ -603,6 +603,64 @@ function Upgrade-WingetAll {
     Write-WingetResult -Action "WingetUpgradeAll" -Target "ALL" -Result $result
     return $result.Success
 }
+
+function Invoke-WingetUpgradeAllWithDisplay {
+    [void](Initialize-Winget)
+
+    $isSystem = Test-TrivorSystemContext
+
+    Write-Host ""
+    Write-Host "Verificando apps com atualizacao disponivel..." -ForegroundColor Cyan
+    Write-Host ""
+
+    if ($isSystem) {
+        $listResult = Invoke-WingetAsUser -Arguments "upgrade" -OperationName "upgrade_list"
+        if ($listResult.StdOut -and (Test-Path $listResult.StdOut)) {
+            Get-Content $listResult.StdOut -Encoding UTF8 | ForEach-Object { Write-Host $_ }
+        } else {
+            Write-Host "Nao foi possivel obter a lista de atualizacoes." -ForegroundColor Yellow
+        }
+    } else {
+        if (-not $global:TrivorWingetExe) { $null = Initialize-Winget }
+        if (-not $global:TrivorWingetExe) {
+            Write-Host "Winget nao disponivel." -ForegroundColor Red
+            return
+        }
+        & $global:TrivorWingetExe upgrade 2>&1 | ForEach-Object { Write-Host $_ }
+    }
+
+    Write-Host ""
+    $confirm = Read-Host "Deseja atualizar todos os apps acima? (S para confirmar)"
+    if ($confirm -notmatch "^(S|s|Y|y)$") {
+        Write-Host "Operacao cancelada." -ForegroundColor Yellow
+        return
+    }
+
+    Write-Host ""
+    Write-Host "Executando: winget upgrade --all" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Log "Iniciando winget upgrade --all via menu" "INFO"
+
+    if ($isSystem) {
+        $result = Invoke-WingetAsUser -Arguments "upgrade --all --include-unknown --accept-package-agreements --accept-source-agreements --disable-interactivity" -OperationName "upgrade_all_display"
+        Write-WingetResult -Action "WingetUpgradeAll" -Target "ALL" -Result $result
+        if ($result.StdOut -and (Test-Path $result.StdOut)) {
+            Get-Content $result.StdOut -Encoding UTF8 | ForEach-Object { Write-Host $_ }
+        }
+        if ($result.Success) {
+            Write-Host ""
+            Write-Host "Upgrade concluido com sucesso." -ForegroundColor Green
+        } else {
+            Write-Host ""
+            Write-Host "Upgrade finalizado com erros. Verifique o log." -ForegroundColor Yellow
+        }
+    } else {
+        & $global:TrivorWingetExe upgrade --all --include-unknown --accept-package-agreements --accept-source-agreements 2>&1 | ForEach-Object { Write-Host $_ }
+        Write-Host ""
+        Write-Host "Upgrade concluido." -ForegroundColor Green
+        Write-Log "winget upgrade --all finalizado" "INFO"
+    }
+}
 #endregion
 
 #region Install router

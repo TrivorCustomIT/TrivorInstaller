@@ -139,14 +139,15 @@ function Show-ClientMenu {
         Write-Host ""
         Write-Host "1 - Modo automatico (renomear + instalar tudo)"
         Write-Host "2 - Modo manual (confirmar cada app)"
-        Write-Host "3 - Update todos os programas (Winget)"
+        Write-Host "3 - Update todos os programas do cliente (Winget)"
         Write-Host "4 - Renomear hostname"
-        Write-Host "5 - Voltar ao menu principal"
+        Write-Host "5 - Winget upgrade --all (atualizar todos os apps da maquina)"
+        Write-Host "6 - Voltar ao menu principal"
         Write-Host ""
 
         $choice = Read-Host "Selecione uma opcao"
 
-        if ($choice -eq "5") { return }
+        if ($choice -eq "6") { return }
 
         $cfg = Get-ClientConfigByName -ClientName $ClientName
         if (-not $cfg) { return }
@@ -204,6 +205,13 @@ function Show-ClientMenu {
 
         if ($choice -eq "4") {
             Invoke-HostnameCheck -ClientConfig $cfg
+            Write-Host ""
+            Wait-Enter
+            continue
+        }
+
+        if ($choice -eq "5") {
+            Invoke-WingetUpgradeAllWithDisplay
             Write-Host ""
             Wait-Enter
             continue
