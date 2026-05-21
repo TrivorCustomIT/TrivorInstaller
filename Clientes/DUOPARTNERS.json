@@ -1,5 +1,6 @@
 ﻿{
  "Client": "DUOPARTNERS",
+  "PrefixHostname": "DUO",
   "Applications": [
     {
       "Id": "7zip",
@@ -15,6 +16,56 @@
       "Id": "chrome",
       "Name": "Google Chrome",
       "WingetId": "Google.Chrome"
+    },
+    {
+      "Id": "adobe-reader",
+      "Name": "Adobe Reader DC (64-bit)",
+      "WingetId": "Adobe.Acrobat.Reader.64-bit"
+    },
+    {
+      "Id": "zoom",
+      "Name": "Zoom Workplace",
+      "WingetId": "Zoom.Zoom"
+    },
+    {
+      "Id": "rmm-agent",
+      "Name": "Trivor RMM Agent",
+      "Detection": {
+        "Method": "Hybrid",
+        "RegistryDisplayName": "Advanced Monitoring Agent", 
+        "MinVersion": "10.14.4",
+        "ServiceName": "Advanced Monitoring Agent",
+        "ServiceDisplayName": "Advanced Monitoring Agent"
+      },
+      "Install": {
+        "Method": "RepoExePublic",
+        "Owner": "TrivorCustomIT",
+        "Repo": "TrivorInstallerRepository",
+        "Branch": "main",
+        "RelativePath": "Installers/clients/duopartners/rmm/AGENT_275000_V10_14_4_RW.EXE",
+        "SilentArgs": "/silent /norestart",
+        "CacheFileName": "AGENT_275000_V10_14_4_RW.EXE",
+        "Sha256": "CACFB73CB2C101B6758D8D7095283DC49D9EF2BFF18354D4680576D1FDF886A5",
+        "CleanAfterInstall": true
+      }
+    },
+    {
+      "Id": "takecontrol",
+      "Name": "Take Control Agent",
+      "Detection": {
+        "Method": "Hybrid",
+        "RegistryDisplayName": "Agente Take Control",
+        "ServiceName": "Agente Take Control",
+        "ServiceDisplayName": "Agente Take Control"
+      },
+      "Install": {
+        "Method": "UrlExe",
+        "Url": "https://api.us0.swi-rc.com/download/getpcinstall.php?iid=831a56c3-5524-11f1-b22b-0affd1392461",
+        "SilentArgs": "/silent",
+        "CacheFileName": "TakeControlAgent.exe",
+        "Sha256": "",
+        "CleanAfterInstall": true
+      }
     }
   ]
 }
