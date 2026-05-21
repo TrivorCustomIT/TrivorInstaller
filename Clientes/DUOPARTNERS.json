@@ -1,6 +1,6 @@
 ﻿{
  "Client": "DUOPARTNERS",
-  "PrefixHostname": "DUO",
+  "HostnamePrefix": "DUO",
   "Applications": [
     {
       "Id": "7zip",
