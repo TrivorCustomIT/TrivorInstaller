@@ -42,9 +42,9 @@
         "Owner": "TrivorCustomIT",
         "Repo": "TrivorInstallerRepository",
         "Branch": "main",
-        "RelativePath": "Installers/clients/duopartners/AGENT_275000_V10_14_4_RW.EXE",
+        "RelativePath": "Installers/clients/duopartners/AGENT_477928_V10_15_3_RW.EXE",
         "SilentArgs": "/silent /norestart",
-        "CacheFileName": "AGENT_275000_V10_14_4_RW.EXE",
+        "CacheFileName": "AGENT_477928_V10_15_3_RW.EXE",
         "Sha256": "CACFB73CB2C101B6758D8D7095283DC49D9EF2BFF18354D4680576D1FDF886A5",
         "CleanAfterInstall": true
       }
