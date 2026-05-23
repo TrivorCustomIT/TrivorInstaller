@@ -23,6 +23,17 @@ a gestão do parque tecnológico.
 
 
 
+V3.40
+
+Refatoração e correções de qualidade:
+  └─ Versão agora buscada da API do GitHub em todos os contextos (sem hardcoded)
+  └─ Bug corrigido: runner da Scheduled Task sobrescrevia stdout antes do winget executar
+  └─ Código morto removido: Invoke-AppAction modo Manual, Invoke-ClientManualInstall, cache de status de menu
+  └─ Detection.ps1: método Registry aceita tanto DisplayName quanto RegistryDisplayName
+  └─ Engine.ps1: User-Agent atualizado para 3.40
+
+====================================================
+
 V3.37
 
 Nova opção no menu de cliente: Winget Upgrade --all

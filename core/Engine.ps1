@@ -136,7 +136,7 @@ function Invoke-TrivorDownloadWithProgress {
                 $request.MaximumAutomaticRedirections = 10
                 $request.Timeout = 300000
                 $request.ReadWriteTimeout = 300000
-                $request.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) TrivorInstaller/3.34"
+                $request.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) TrivorInstaller/3.40"
                 $request.Accept = "*/*"
 
                 $response = $request.GetResponse()
@@ -466,11 +466,6 @@ function Resolve-UserWinget {
 
     return `$null
 }
-
-"==== Trivor Winget Runner ====" | Out-File -FilePath "$stdout" -Append -Encoding UTF8
-"User=`$env:USERDOMAIN\`$env:USERNAME" | Out-File -FilePath "$stdout" -Append -Encoding UTF8
-"Operation=$OperationName" | Out-File -FilePath "$stdout" -Append -Encoding UTF8
-"Arguments=$Arguments" | Out-File -FilePath "$stdout" -Append -Encoding UTF8
 
 `$wingetExe = Resolve-UserWinget
 if (-not `$wingetExe) {
@@ -871,10 +866,7 @@ function Should-ForceReinstallByVersion {
 }
 
 function Invoke-AppAction {
-    param(
-        [Parameter(Mandatory)] $App,
-        [Parameter(Mandatory)] [ValidateSet("Auto","Manual")] [string]$Mode
-    )
+    param([Parameter(Mandatory)] $App)
 
     $state     = Get-ApplicationState -App $App
     $installed = [bool]$state.Installed
@@ -887,13 +879,7 @@ function Invoke-AppAction {
     if ($installed) {
         Write-Log "$($App.Name) already installed. Checking for updates..." "INFO"
         if ($hasWinget) {
-            if ($Mode -eq "Manual") {
-                $choice = Read-Host "Update $($App.Name) via Winget? (Y/N)"
-                if ($choice -match "^(Y|y)$") { Update-WingetApp -WingetId $App.WingetId | Out-Null }
-                else { Write-Log "Skipped update: $($App.Name)" "INFO" }
-            } else {
-                Update-WingetApp -WingetId $App.WingetId | Out-Null
-            }
+            Update-WingetApp -WingetId $App.WingetId | Out-Null
         } else {
             Write-Log "No WingetId for update: $($App.Name)" "INFO"
         }
@@ -901,14 +887,7 @@ function Invoke-AppAction {
     }
 
     Write-Log "$($App.Name) not installed." "INFO"
-
-    if ($Mode -eq "Manual") {
-        $choice = Read-Host "Install $($App.Name)? (Y/N)"
-        if ($choice -match "^(Y|y)$") { Install-Application -App $App }
-        else { Write-Log "Skipped install: $($App.Name)" "INFO" }
-    } else {
-        Install-Application -App $App
-    }
+    Install-Application -App $App
 }
 
 function Invoke-AppActionManual {
@@ -965,7 +944,7 @@ function Invoke-ClientInstallation {
 
     foreach ($app in $ClientConfig.Applications) {
         Write-Log "Processing: $($app.Name)" "INFO"
-        Invoke-AppAction -App $app -Mode "Auto"
+        Invoke-AppAction -App $app
     }
 
     Write-Log "Finished AUTO mode for client: $($ClientConfig.Client)" "INFO"
@@ -988,20 +967,4 @@ function Invoke-ClientUpdateOnly {
     Write-Log "Finished UPDATE ONLY mode for client: $($ClientConfig.Client)" "INFO"
 }
 
-function Invoke-ClientManualInstall {
-    param([Parameter(Mandatory)] [psobject]$ClientConfig)
-
-    [void](Initialize-Winget)
-    Write-Log "Starting MANUAL mode for client: $($ClientConfig.Client)" "INFO"
-
-    foreach ($app in $ClientConfig.Applications) {
-        $r = Invoke-AppActionManual -App $app
-        if ($r -eq "QUIT") {
-            Write-Log "Manual mode aborted by user." "INFO"
-            return
-        }
-    }
-
-    Write-Log "Finished MANUAL mode for client: $($ClientConfig.Client)" "INFO"
-}
 #endregion

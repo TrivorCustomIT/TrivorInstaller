@@ -103,8 +103,6 @@ function Show-AppGrid {
     Write-Host "Legenda: [OK] Instalado | [--] Nao instalado | [!!] Versao antiga" -ForegroundColor DarkGray
     Write-Host ""
 
-    $global:TrivorManualStatusCache = @{}
-
     $header = "{0,4}  {1,-4} {2,-48} {3,-16} {4,-12} {5}" -f "Num", "St", "Aplicacao", "Status", "Fonte", "Versao"
     Write-Host $header -ForegroundColor DarkCyan
     Write-Host ("-" * ([Math]::Min($header.Length, 118))) -ForegroundColor DarkGray
@@ -112,9 +110,6 @@ function Show-AppGrid {
     for ($idx = 0; $idx -lt $Apps.Count; $idx++) {
         $app = $Apps[$idx]
         $status = Get-AppManualMenuStatus -App $app
-
-        $key = if ($app.Id) { [string]$app.Id } else { [string]($idx + 1) }
-        $global:TrivorManualStatusCache[$key] = $status
 
         $source = if ($status.Source) { $status.Source } else { "-" }
         $version = if ($status.Version) { $status.Version } else { "-" }

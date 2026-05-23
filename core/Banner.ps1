@@ -10,7 +10,7 @@ function Get-InstallerVersion {
             return $global:TrivorVersionCache
         }
     } catch {}
-    $global:TrivorVersionCache = "v3.36-rmm-user-detection"
+    $global:TrivorVersionCache = "v3.40"
     return $global:TrivorVersionCache
 }
 
