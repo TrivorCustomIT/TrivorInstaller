@@ -1,5 +1,5 @@
-﻿{
- "Client": "UNIAOVIDIGAL",
+{
+  "Client": "UNIAOVIDIGAL",
   "Applications": [
     {
       "Id": "7zip",
@@ -25,6 +25,11 @@
       "Id": "adobe-reader",
       "Name": "Adobe Reader DC (64-bit)",
       "WingetId": "Adobe.Acrobat.Reader.64-bit"
+    },
+    {
+      "Id": "zoom",
+      "Name": "Zoom Workplace",
+      "WingetId": "Zoom.Zoom"
     }
   ]
 }

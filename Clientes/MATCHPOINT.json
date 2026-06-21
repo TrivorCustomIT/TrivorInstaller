@@ -1,5 +1,5 @@
-﻿{
- "Client": "MATCHPOINT",
+{
+  "Client": "MATCHPOINT",
   "Applications": [
     {
       "Id": "7zip",
@@ -15,6 +15,16 @@
       "Id": "chrome",
       "Name": "Google Chrome",
       "WingetId": "Google.Chrome"
+    },
+    {
+      "Id": "adobe-reader",
+      "Name": "Adobe Reader DC (64-bit)",
+      "WingetId": "Adobe.Acrobat.Reader.64-bit"
+    },
+    {
+      "Id": "zoom",
+      "Name": "Zoom Workplace",
+      "WingetId": "Zoom.Zoom"
     }
   ]
 }
