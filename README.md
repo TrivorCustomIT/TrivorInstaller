@@ -11,7 +11,7 @@ Trivor Installer
 
 Aplicativo Desenvolvido para padronizar a instalação de Softwares e Aplicativos Gereciados
 
-Foi pensado na dificuldade de se manter o parque de equipamentos tecnologicos sem um padrão, podendo
+Foi pensado na dificuldade de se manter o parque de equipamentos tecnologicos em um padrão, podendo
 causar horas de retrabalho, além da instalação de softwares de gerenciamento e inventário, facilitando 
 a gestão do parque tecnológico.
 
