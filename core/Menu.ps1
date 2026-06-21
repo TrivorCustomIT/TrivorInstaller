@@ -11,13 +11,15 @@ function Get-ClientsPath {
 }
 
 function Get-ClientList {
+    if ($global:TrivorClientNames -and $global:TrivorClientNames.Count -gt 0) {
+        return $global:TrivorClientNames
+    }
+    # Fallback: read from local cache
     $clientsPath = Get-ClientsPath
-
     if (-not (Test-Path $clientsPath)) {
         Write-Log "Clients folder not found: $clientsPath" "ERROR"
         return @()
     }
-
     $files = Get-ChildItem $clientsPath -Filter *.json | Sort-Object Name
     return $files | ForEach-Object { [System.IO.Path]::GetFileNameWithoutExtension($_.Name) }
 }
@@ -29,14 +31,32 @@ function Get-ClientConfigByName {
     $file = Join-Path $clientsPath "$ClientName.json"
 
     if (-not (Test-Path $file)) {
-        Write-Log "Client config not found: $file" "ERROR"
-        return $null
+        if ($global:TrivorOwner -and $global:TrivorRepo -and $global:TrivorBranch) {
+            $url = "https://raw.githubusercontent.com/$($global:TrivorOwner)/$($global:TrivorRepo)/$($global:TrivorBranch)/Clientes/$ClientName.json"
+            try {
+                New-Item -ItemType Directory -Force -Path $clientsPath | Out-Null
+                Invoke-WebRequest -Uri $url -OutFile $file -UseBasicParsing -ErrorAction Stop
+                Write-Log "Downloaded client config: $ClientName" "INFO"
+            }
+            catch {
+                Write-Host ""
+                Write-Host "[ERROR] Falha ao baixar config do cliente '${ClientName}' do GitHub:" -ForegroundColor Red
+                Write-Host $_.Exception.Message -ForegroundColor Red
+                Write-Host ""
+                Wait-Enter
+                return $null
+            }
+        } else {
+            Write-Log "Client config not found: $file" "ERROR"
+            return $null
+        }
     }
 
     try {
         $content = Get-Content $file -Raw -Encoding UTF8
         return $content | ConvertFrom-Json -ErrorAction Stop
-    } catch {
+    }
+    catch {
         Write-Host ""
         Write-Host "[ERROR] Falha ao ler JSON do cliente '${ClientName}':" -ForegroundColor Red
         Write-Host $_.Exception.Message -ForegroundColor Red
