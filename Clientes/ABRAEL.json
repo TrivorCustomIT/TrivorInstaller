@@ -1,4 +1,4 @@
-﻿{
+{
  "Client": "ABRAEL",
  "HostnamePrefix": "ABL",
   "Applications": [
@@ -30,6 +30,7 @@
     {
       "Id": "rmm-agent",
       "Name": "Trivor RMM Agent",
+      "Priority": 1,
       "Detection": {
         "Method": "Hybrid",
         "RegistryDisplayName": "Advanced Monitoring Agent",
@@ -52,6 +53,7 @@
     {
       "Id": "takecontrol",
       "Name": "Take Control Agent",
+      "Priority": 2,
       "Detection": {
         "Method": "Hybrid",
         "RegistryDisplayName": "Agente Take Control",

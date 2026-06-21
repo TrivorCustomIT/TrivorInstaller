@@ -936,18 +936,57 @@ function Invoke-AppActionManual {
 #endregion
 
 #region Entry points
-function Invoke-ClientInstallation {
+
+function Get-AppPriority {
+    param($App)
+    $p = $App.PSObject.Properties['Priority']
+    if ($p -and $null -ne $p.Value) { return [int]$p.Value }
+    return 100
+}
+
+function Invoke-PostFormatInstallation {
+    # Pos-Formatacao: instala tudo em ordem de prioridade sem deteccao previa.
+    # Indicado para maquinas recem formatadas onde nada esta instalado.
     param([Parameter(Mandatory)] [psobject]$ClientConfig)
 
     [void](Initialize-Winget)
-    Write-Log "Starting AUTO mode for client: $($ClientConfig.Client)" "INFO"
+    Write-Log "Starting POS-FORMATACAO mode for client: $($ClientConfig.Client)" "INFO"
 
-    foreach ($app in $ClientConfig.Applications) {
-        Write-Log "Processing: $($app.Name)" "INFO"
+    $apps = @($ClientConfig.Applications) | Sort-Object { Get-AppPriority -App $_ }
+    $total = $apps.Count
+    $current = 0
+
+    foreach ($app in $apps) {
+        $current++
+        Write-Host ""
+        Write-Host ("[{0}/{1}] Instalando: {2}" -f $current, $total, $app.Name) -ForegroundColor Yellow
+        Write-Log ("Pos-Formatacao [{0}/{1}]: {2}" -f $current, $total, $app.Name) "INFO"
+        Install-Application -App $app
+    }
+
+    Write-Log "Finished POS-FORMATACAO mode for client: $($ClientConfig.Client)" "INFO"
+}
+
+function Invoke-ClientInstallation {
+    # Compliance: detecta o que esta instalado, instala o que falta e atualiza o que tem WingetId.
+    param([Parameter(Mandatory)] [psobject]$ClientConfig)
+
+    [void](Initialize-Winget)
+    Write-Log "Starting COMPLIANCE mode for client: $($ClientConfig.Client)" "INFO"
+
+    $apps = @($ClientConfig.Applications) | Sort-Object { Get-AppPriority -App $_ }
+    $total = $apps.Count
+    $current = 0
+
+    foreach ($app in $apps) {
+        $current++
+        Write-Host ""
+        Write-Host ("[{0}/{1}] {2}" -f $current, $total, $app.Name) -ForegroundColor Cyan
+        Write-Log ("Compliance [{0}/{1}]: {2}" -f $current, $total, $app.Name) "INFO"
         Invoke-AppAction -App $app
     }
 
-    Write-Log "Finished AUTO mode for client: $($ClientConfig.Client)" "INFO"
+    Write-Log "Finished COMPLIANCE mode for client: $($ClientConfig.Client)" "INFO"
 }
 
 function Invoke-ClientUpdateOnly {
@@ -956,12 +995,18 @@ function Invoke-ClientUpdateOnly {
     [void](Initialize-Winget)
     Write-Log "Starting UPDATE ONLY mode for client: $($ClientConfig.Client)" "INFO"
 
-    foreach ($app in $ClientConfig.Applications) {
-        if ($app.PSObject.Properties.Match("WingetId").Count -gt 0 -and $app.WingetId) {
-            Update-WingetApp -WingetId $app.WingetId | Out-Null
-        } else {
-            Write-Log "No WingetId for update: $($app.Name)" "INFO"
-        }
+    $apps = @($ClientConfig.Applications) | Where-Object {
+        $_.PSObject.Properties.Match("WingetId").Count -gt 0 -and $_.WingetId
+    }
+    $total = $apps.Count
+    $current = 0
+
+    foreach ($app in $apps) {
+        $current++
+        Write-Host ""
+        Write-Host ("[{0}/{1}] {2}" -f $current, $total, $app.Name) -ForegroundColor Cyan
+        Write-Log ("Update [{0}/{1}]: {2}" -f $current, $total, $app.Name) "INFO"
+        Update-WingetApp -WingetId $app.WingetId | Out-Null
     }
 
     Write-Log "Finished UPDATE ONLY mode for client: $($ClientConfig.Client)" "INFO"
