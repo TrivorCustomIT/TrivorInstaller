@@ -11,13 +11,15 @@ function Get-ClientsPath {
 }
 
 function Get-ClientList {
+    if ($global:TrivorClientNames -and $global:TrivorClientNames.Count -gt 0) {
+        return $global:TrivorClientNames
+    }
+    # Fallback: read from local cache
     $clientsPath = Get-ClientsPath
-
     if (-not (Test-Path $clientsPath)) {
         Write-Log "Clients folder not found: $clientsPath" "ERROR"
         return @()
     }
-
     $files = Get-ChildItem $clientsPath -Filter *.json | Sort-Object Name
     return $files | ForEach-Object { [System.IO.Path]::GetFileNameWithoutExtension($_.Name) }
 }
@@ -29,14 +31,32 @@ function Get-ClientConfigByName {
     $file = Join-Path $clientsPath "$ClientName.json"
 
     if (-not (Test-Path $file)) {
-        Write-Log "Client config not found: $file" "ERROR"
-        return $null
+        if ($global:TrivorOwner -and $global:TrivorRepo -and $global:TrivorBranch) {
+            $url = "https://raw.githubusercontent.com/$($global:TrivorOwner)/$($global:TrivorRepo)/$($global:TrivorBranch)/Clientes/$ClientName.json"
+            try {
+                New-Item -ItemType Directory -Force -Path $clientsPath | Out-Null
+                Invoke-WebRequest -Uri $url -OutFile $file -UseBasicParsing -ErrorAction Stop
+                Write-Log "Downloaded client config: $ClientName" "INFO"
+            }
+            catch {
+                Write-Host ""
+                Write-Host "[ERROR] Falha ao baixar config do cliente '${ClientName}' do GitHub:" -ForegroundColor Red
+                Write-Host $_.Exception.Message -ForegroundColor Red
+                Write-Host ""
+                Wait-Enter
+                return $null
+            }
+        } else {
+            Write-Log "Client config not found: $file" "ERROR"
+            return $null
+        }
     }
 
     try {
         $content = Get-Content $file -Raw -Encoding UTF8
         return $content | ConvertFrom-Json -ErrorAction Stop
-    } catch {
+    }
+    catch {
         Write-Host ""
         Write-Host "[ERROR] Falha ao ler JSON do cliente '${ClientName}':" -ForegroundColor Red
         Write-Host $_.Exception.Message -ForegroundColor Red
@@ -132,22 +152,32 @@ function Show-ClientMenu {
 
         Write-Host "Cliente: $ClientName" -ForegroundColor Cyan
         Write-Host ""
-        Write-Host "1 - Modo automatico (renomear + instalar tudo)"
-        Write-Host "2 - Modo manual (confirmar cada app)"
-        Write-Host "3 - Update todos os programas do cliente (Winget)"
-        Write-Host "4 - Renomear hostname"
-        Write-Host "5 - Winget upgrade --all (atualizar todos os apps da maquina)"
-        Write-Host "6 - Voltar ao menu principal"
+        Write-Host "1 - Pos-Formatacao  (hostname + instalar tudo por prioridade)"
+        Write-Host "2 - Compliance      (verificar + instalar faltando + atualizar)"
+        Write-Host "3 - Modo manual     (confirmar cada app)"
+        Write-Host "4 - Winget update   (update rapido dos apps do cliente)"
+        Write-Host "5 - Renomear hostname"
+        Write-Host "6 - Winget upgrade --all (todos os apps da maquina)"
+        Write-Host "7 - Voltar ao menu principal"
         Write-Host ""
 
         $choice = Read-Host "Selecione uma opcao"
 
-        if ($choice -eq "6") { return }
+        if ($choice -eq "7") { return }
 
         $cfg = Get-ClientConfigByName -ClientName $ClientName
         if (-not $cfg) { return }
 
         if ($choice -eq "1") {
+            Invoke-HostnameCheck -ClientConfig $cfg
+            Invoke-PostFormatInstallation -ClientConfig $cfg
+            Write-Host ""
+            Write-Host "Concluido." -ForegroundColor Green
+            Wait-Enter
+            continue
+        }
+
+        if ($choice -eq "2") {
             Invoke-HostnameCheck -ClientConfig $cfg
             Invoke-ClientInstallation -ClientConfig $cfg
             Write-Host ""
@@ -156,7 +186,7 @@ function Show-ClientMenu {
             continue
         }
 
-        if ($choice -eq "2") {
+        if ($choice -eq "3") {
             $apps = $cfg.Applications
             if (-not $apps -or $apps.Count -eq 0) {
                 Write-Host "Nenhum app encontrado para este cliente." -ForegroundColor Yellow
@@ -194,7 +224,7 @@ function Show-ClientMenu {
             continue
         }
 
-        if ($choice -eq "3") {
+        if ($choice -eq "4") {
             Invoke-ClientUpdateOnly -ClientConfig $cfg
             Write-Host ""
             Write-Host "Concluido." -ForegroundColor Green
@@ -202,14 +232,14 @@ function Show-ClientMenu {
             continue
         }
 
-        if ($choice -eq "4") {
+        if ($choice -eq "5") {
             Invoke-HostnameCheck -ClientConfig $cfg
             Write-Host ""
             Wait-Enter
             continue
         }
 
-        if ($choice -eq "5") {
+        if ($choice -eq "6") {
             Invoke-WingetUpgradeAllWithDisplay
             Write-Host ""
             Wait-Enter

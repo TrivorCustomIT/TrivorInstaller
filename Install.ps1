@@ -50,7 +50,7 @@ try {
     $CorePath    = Join-Path $BasePath "core"
     $ClientsPath = Join-Path $BasePath "Clientes"
 
-    New-Item -ItemType Directory -Force -Path $CorePath | Out-Null
+    New-Item -ItemType Directory -Force -Path $CorePath    | Out-Null
     New-Item -ItemType Directory -Force -Path $ClientsPath | Out-Null
 
     $Owner  = "TrivorCustomIT"
@@ -81,30 +81,32 @@ try {
         }
     }
 
+    $global:TrivorOwner  = $Owner
+    $global:TrivorRepo   = $Repo
+    $global:TrivorBranch = $Branch
+
     $Headers = @{
         "User-Agent" = "TrivorInstaller"
         "Accept"     = "application/vnd.github+json"
     }
 
     $ClientsApi = "https://api.github.com/repos/$Owner/$Repo/contents/Clientes?ref=$Branch"
-    $downloadedAny = $false
 
     try {
         $items = Invoke-RestMethod -Uri $ClientsApi -Headers $Headers -ErrorAction Stop
-        foreach ($it in $items) {
-            if ($it.type -eq "file" -and $it.name -like "*.json" -and $it.name -ne "_manifest.json") {
-                $dest = Join-Path $ClientsPath $it.name
-                Invoke-WebRequest -Uri $it.download_url -OutFile $dest -UseBasicParsing
-                $downloadedAny = $true
-            }
-        }
+        $global:TrivorClientNames = @(
+            $items |
+            Where-Object { $_.type -eq "file" -and $_.name -like "*.json" -and $_.name -ne "_manifest.json" } |
+            ForEach-Object { [System.IO.Path]::GetFileNameWithoutExtension($_.name) } |
+            Sort-Object
+        )
     }
     catch {
-        Write-Host "ERROR: Failed to download client list from GitHub API."
+        Write-Host "ERROR: Failed to fetch client list from GitHub API."
         exit 1
     }
 
-    if (-not $downloadedAny) {
+    if ($global:TrivorClientNames.Count -eq 0) {
         Write-Host "ERROR: No client JSON files found in 'Clientes' folder."
         exit 1
     }
