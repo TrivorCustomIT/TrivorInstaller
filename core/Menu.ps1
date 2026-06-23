@@ -24,6 +24,36 @@ function Get-ClientList {
     return $files | ForEach-Object { [System.IO.Path]::GetFileNameWithoutExtension($_.Name) }
 }
 
+function Test-ClientConfig {
+    param(
+        [Parameter(Mandatory)] $Config,
+        [Parameter(Mandatory)] [string]$ClientName
+    )
+
+    $errors = @()
+
+    if ([string]::IsNullOrWhiteSpace($Config.Client)) {
+        $errors += "Campo 'Client' ausente ou vazio"
+    }
+
+    if ($null -eq $Config.PSObject.Properties['Applications']) {
+        $errors += "Campo 'Applications' ausente"
+    }
+
+    if ($errors.Count -gt 0) {
+        Write-Host ""
+        Write-Host "[ERROR] JSON do cliente '${ClientName}' com estrutura invalida:" -ForegroundColor Red
+        foreach ($e in $errors) {
+            Write-Host "  - $e" -ForegroundColor Yellow
+        }
+        Write-Host ""
+        Write-Log "JSON invalido para cliente '${ClientName}': $($errors -join '; ')" "ERROR"
+        return $false
+    }
+
+    return $true
+}
+
 function Get-ClientConfigByName {
     param([Parameter(Mandatory)] [string]$ClientName)
 
@@ -54,7 +84,12 @@ function Get-ClientConfigByName {
 
     try {
         $content = Get-Content $file -Raw -Encoding UTF8
-        return $content | ConvertFrom-Json -ErrorAction Stop
+        $cfg = $content | ConvertFrom-Json -ErrorAction Stop
+        if (-not (Test-ClientConfig -Config $cfg -ClientName $ClientName)) {
+            Wait-Enter
+            return $null
+        }
+        return $cfg
     }
     catch {
         Write-Host ""

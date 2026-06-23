@@ -160,6 +160,15 @@ finally {
         Write-Host ("Sessao: {0} instalados com sucesso, {1} falhas." -f $successCount, $global:TrivorSessionFailed) -ForegroundColor $(if ($global:TrivorSessionFailed -gt 0) { "Yellow" } else { "Green" })
     }
 
+    if (-not [string]::IsNullOrWhiteSpace($global:TrivorLogFile)) {
+        Write-Host ""
+        Write-Host "Log da sessao salvo em:" -ForegroundColor DarkGray
+        Write-Host "  $global:TrivorLogFile" -ForegroundColor Gray
+        if (-not [string]::IsNullOrWhiteSpace($global:TrivorTranscriptFile)) {
+            Write-Host "  $global:TrivorTranscriptFile" -ForegroundColor Gray
+        }
+    }
+
     if (Get-Command Stop-TrivorTranscript -ErrorAction SilentlyContinue) {
         Stop-TrivorTranscript
     }
