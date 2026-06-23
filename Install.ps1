@@ -46,6 +46,10 @@ function Invoke-Cleanup {
 Invoke-Cleanup
 
 try {
+    $global:TrivorExitCode      = 0
+    $global:TrivorSessionTotal  = 0
+    $global:TrivorSessionFailed = 0
+
     $BasePath    = $global:TrivorBasePath
     $CorePath    = Join-Path $BasePath "core"
     $ClientsPath = Join-Path $BasePath "Clientes"
@@ -77,6 +81,7 @@ try {
         }
         catch {
             Write-Host "ERROR: Failed to download module '$Module'."
+            $global:TrivorExitCode = 1
             exit 1
         }
     }
@@ -103,11 +108,13 @@ try {
     }
     catch {
         Write-Host "ERROR: Failed to fetch client list from GitHub API."
+        $global:TrivorExitCode = 1
         exit 1
     }
 
     if ($global:TrivorClientNames.Count -eq 0) {
         Write-Host "ERROR: No client JSON files found in 'Clientes' folder."
+        $global:TrivorExitCode = 1
         exit 1
     }
 
@@ -136,12 +143,36 @@ catch {
     else {
         Write-Host "Falha fatal no bootstrap: $($_.Exception.Message)"
     }
+    if ($global:TrivorExitCode -eq 0) { $global:TrivorExitCode = 1 }
     throw
 }
 finally {
+    if ($global:TrivorExitCode -eq 0 -and $global:TrivorSessionFailed -gt 0) {
+        $global:TrivorExitCode = 2
+    }
+
+    if ($global:TrivorSessionTotal -gt 0) {
+        $successCount = $global:TrivorSessionTotal - $global:TrivorSessionFailed
+        if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
+            Write-Log ("Sessao encerrada: {0} ok / {1} falhas / {2} total" -f $successCount, $global:TrivorSessionFailed, $global:TrivorSessionTotal) "INFO"
+        }
+        Write-Host ""
+        Write-Host ("Sessao: {0} instalados com sucesso, {1} falhas." -f $successCount, $global:TrivorSessionFailed) -ForegroundColor $(if ($global:TrivorSessionFailed -gt 0) { "Yellow" } else { "Green" })
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($global:TrivorLogFile)) {
+        Write-Host ""
+        Write-Host "Log da sessao salvo em:" -ForegroundColor DarkGray
+        Write-Host "  $global:TrivorLogFile" -ForegroundColor Gray
+        if (-not [string]::IsNullOrWhiteSpace($global:TrivorTranscriptFile)) {
+            Write-Host "  $global:TrivorTranscriptFile" -ForegroundColor Gray
+        }
+    }
+
     if (Get-Command Stop-TrivorTranscript -ErrorAction SilentlyContinue) {
         Stop-TrivorTranscript
     }
 
     Invoke-Cleanup
+    exit $global:TrivorExitCode
 }

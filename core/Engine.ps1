@@ -664,11 +664,10 @@ function Install-Application {
 
     # 1) Winget
     if ($App.PSObject.Properties.Match("WingetId").Count -gt 0 -and $App.WingetId) {
-        Install-WingetApp -WingetId $App.WingetId | Out-Null
-        return
+        return (Install-WingetApp -WingetId $App.WingetId)
     }
 
-    $cacheRoot = Join-Path $env:TEMP "TrivorInstaller\cache"
+    $cacheRoot = if ($global:CachePath) { $global:CachePath } else { Join-Path $env:TEMP "TrivorInstaller\cache" }
     New-Item -ItemType Directory -Force -Path $cacheRoot | Out-Null
 
     # 2) RepoExePublic
@@ -690,7 +689,7 @@ function Install-Application {
                 -RelativePath $App.Install.RelativePath -DestinationFile $localFile
         }
 
-        if (-not $ok) { return }
+        if (-not $ok) { return $false }
 
         Write-Log "Executing installer: $localFile" "INFO"
         $installArgs = if ($App.Install.SilentArgs) { $App.Install.SilentArgs } else { "" }
@@ -700,7 +699,7 @@ function Install-Application {
             try { Remove-Item $localFile -Force -ErrorAction SilentlyContinue } catch {}
             Write-Log "Cache cleaned: $localFile" "INFO"
         }
-        return
+        return $true
     }
 
     # 3) UrlExe
@@ -743,7 +742,7 @@ function Install-Application {
 
             if (-not $ok) {
                 Write-Log "Download failed: $($App.Install.Url)" "ERROR"
-                return
+                return $false
             }
         }
 
@@ -754,7 +753,7 @@ function Install-Application {
             if (-not ($hash -and $hash -eq $expected)) {
                 Write-Log "SHA256 mismatch after download. Expected=$expected | Current=$hash. Aborting." "ERROR"
                 try { Remove-Item $localFile -Force -ErrorAction SilentlyContinue } catch {}
-                return
+                return $false
             }
 
             Write-Log "SHA256 OK: $localFile" "INFO"
@@ -762,13 +761,13 @@ function Install-Application {
 
         if (-not (Test-Path $localFile)) {
             Write-Log "Installer nao encontrado apos download: $localFile" "ERROR"
-            return
+            return $false
         }
 
         $fileInfo = Get-Item $localFile -ErrorAction SilentlyContinue
         if (-not $fileInfo -or $fileInfo.Length -le 0) {
             Write-Log "Installer invalido ou vazio: $localFile" "ERROR"
-            return
+            return $false
         }
 
         Write-Log "Executing installer: $localFile" "INFO"
@@ -780,14 +779,14 @@ function Install-Application {
         }
         catch {
             Write-Log "Falha ao executar installer: $localFile | $($_.Exception.Message)" "ERROR"
-            return
+            return $false
         }
 
         if ($App.Install.CleanAfterInstall -eq $true) {
             try { Remove-Item $localFile -Force -ErrorAction SilentlyContinue } catch {}
             Write-Log "Cache cleaned: $localFile" "INFO"
         }
-        return
+        return $true
     }
 
 
@@ -806,7 +805,7 @@ function Install-Application {
 
         if (-not $ok) {
             Write-Log "Falha ao baixar .reg: $($App.Install.RelativePath)" "ERROR"
-            return
+            return $false
         }
 
         # Garante encoding UTF-16 LE com BOM (exigido pelo reg import)
@@ -839,10 +838,11 @@ function Install-Application {
             try { Remove-Item $localFile -Force -ErrorAction SilentlyContinue } catch {}
             Write-Log "Cache cleaned: $localFile" "INFO"
         }
-        return
+        return $true
     }
 
     Write-Log "No valid installation method for $($App.Name)" "ERROR"
+    return $false
 }
 #endregion
 
@@ -879,15 +879,15 @@ function Invoke-AppAction {
     if ($installed) {
         Write-Log "$($App.Name) already installed. Checking for updates..." "INFO"
         if ($hasWinget) {
-            Update-WingetApp -WingetId $App.WingetId | Out-Null
+            return (Update-WingetApp -WingetId $App.WingetId)
         } else {
             Write-Log "No WingetId for update: $($App.Name)" "INFO"
+            return $true
         }
-        return
     }
 
     Write-Log "$($App.Name) not installed." "INFO"
-    Install-Application -App $App
+    return (Install-Application -App $App)
 }
 
 function Invoke-AppActionManual {
@@ -961,7 +961,9 @@ function Invoke-PostFormatInstallation {
         Write-Host ""
         Write-Host ("[{0}/{1}] Instalando: {2}" -f $current, $total, $app.Name) -ForegroundColor Yellow
         Write-Log ("Pos-Formatacao [{0}/{1}]: {2}" -f $current, $total, $app.Name) "INFO"
-        Install-Application -App $app
+        $global:TrivorSessionTotal++
+        $ok = Install-Application -App $app
+        if (-not $ok) { $global:TrivorSessionFailed++ }
     }
 
     Write-Log "Finished POS-FORMATACAO mode for client: $($ClientConfig.Client)" "INFO"
@@ -983,7 +985,9 @@ function Invoke-ClientInstallation {
         Write-Host ""
         Write-Host ("[{0}/{1}] {2}" -f $current, $total, $app.Name) -ForegroundColor Cyan
         Write-Log ("Compliance [{0}/{1}]: {2}" -f $current, $total, $app.Name) "INFO"
-        Invoke-AppAction -App $app
+        $global:TrivorSessionTotal++
+        $ok = Invoke-AppAction -App $app
+        if (-not $ok) { $global:TrivorSessionFailed++ }
     }
 
     Write-Log "Finished COMPLIANCE mode for client: $($ClientConfig.Client)" "INFO"
@@ -1006,7 +1010,9 @@ function Invoke-ClientUpdateOnly {
         Write-Host ""
         Write-Host ("[{0}/{1}] {2}" -f $current, $total, $app.Name) -ForegroundColor Cyan
         Write-Log ("Update [{0}/{1}]: {2}" -f $current, $total, $app.Name) "INFO"
-        Update-WingetApp -WingetId $app.WingetId | Out-Null
+        $global:TrivorSessionTotal++
+        $ok = Update-WingetApp -WingetId $app.WingetId
+        if (-not $ok) { $global:TrivorSessionFailed++ }
     }
 
     Write-Log "Finished UPDATE ONLY mode for client: $($ClientConfig.Client)" "INFO"
