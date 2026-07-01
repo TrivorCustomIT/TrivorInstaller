@@ -28,6 +28,40 @@
       "WingetId": "Zoom.Zoom"
     },
     {
+      "Id": "forticlient-vpn",
+      "Name": "FortiClient VPN",
+      "Detection": {
+        "Method": "Hybrid",
+        "RegistryDisplayName": "FortiClient VPN",
+        "ServiceName": "FortiClient VPN",
+        "ServiceDisplayName": "FortiClient VPN"
+      },
+      "Install": {
+        "Method": "UrlExe",
+        "Url": "https://filestore.fortinet.com/forticlient/downloads/FortiClientVPNInstaller.exe",
+        "SilentArgs": "/silent",
+        "CacheFileName": "FortiClientVPNInstaller.exe",
+        "Sha256": "",
+        "CleanAfterInstall": true
+      }
+    },
+    {
+      "Id": "forticlient-vpn-config",
+      "Name": "FortiClient VPN Config (Cirklo)",
+      "Detection": {
+        "Method": "RegistryKey",
+        "KeyPath": "HKLM:\\SOFTWARE\\Fortinet\\FortiClient\\Sslvpn\\Tunnels\\Cirklo - Sao Carlos"
+      },
+      "Install": {
+        "Method": "RegFile",
+        "Owner": "TrivorCustomIT",
+        "Repo": "TrivorInstallerRepository",
+        "Branch": "main",
+        "RelativePath": "Installers/clients/cirklo/cirklo_ssl_vpn.reg",
+        "CleanAfterInstall": true
+      }
+    },
+    {
       "Id": "takecontrol",
       "Name": "Take Control Agent",
       "Detection": {
