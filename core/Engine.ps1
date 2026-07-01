@@ -136,7 +136,7 @@ function Invoke-TrivorDownloadWithProgress {
                 $request.MaximumAutomaticRedirections = 10
                 $request.Timeout = 300000
                 $request.ReadWriteTimeout = 300000
-                $request.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) TrivorInstaller/3.34"
+                $request.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) TrivorInstaller/3.40"
                 $request.Accept = "*/*"
 
                 $response = $request.GetResponse()
@@ -467,11 +467,6 @@ function Resolve-UserWinget {
     return `$null
 }
 
-"==== Trivor Winget Runner ====" | Out-File -FilePath "$stdout" -Append -Encoding UTF8
-"User=`$env:USERDOMAIN\`$env:USERNAME" | Out-File -FilePath "$stdout" -Append -Encoding UTF8
-"Operation=$OperationName" | Out-File -FilePath "$stdout" -Append -Encoding UTF8
-"Arguments=$Arguments" | Out-File -FilePath "$stdout" -Append -Encoding UTF8
-
 `$wingetExe = Resolve-UserWinget
 if (-not `$wingetExe) {
     "Winget nao encontrado no contexto do usuario logado." | Out-File -FilePath "$stderr" -Append -Encoding UTF8
@@ -669,11 +664,10 @@ function Install-Application {
 
     # 1) Winget
     if ($App.PSObject.Properties.Match("WingetId").Count -gt 0 -and $App.WingetId) {
-        Install-WingetApp -WingetId $App.WingetId | Out-Null
-        return
+        return (Install-WingetApp -WingetId $App.WingetId)
     }
 
-    $cacheRoot = Join-Path $env:TEMP "TrivorInstaller\cache"
+    $cacheRoot = if ($global:CachePath) { $global:CachePath } else { Join-Path $env:TEMP "TrivorInstaller\cache" }
     New-Item -ItemType Directory -Force -Path $cacheRoot | Out-Null
 
     # 2) RepoExePublic
@@ -695,7 +689,7 @@ function Install-Application {
                 -RelativePath $App.Install.RelativePath -DestinationFile $localFile
         }
 
-        if (-not $ok) { return }
+        if (-not $ok) { return $false }
 
         Write-Log "Executing installer: $localFile" "INFO"
         $installArgs = if ($App.Install.SilentArgs) { $App.Install.SilentArgs } else { "" }
@@ -705,7 +699,7 @@ function Install-Application {
             try { Remove-Item $localFile -Force -ErrorAction SilentlyContinue } catch {}
             Write-Log "Cache cleaned: $localFile" "INFO"
         }
-        return
+        return $true
     }
 
     # 3) UrlExe
@@ -748,7 +742,7 @@ function Install-Application {
 
             if (-not $ok) {
                 Write-Log "Download failed: $($App.Install.Url)" "ERROR"
-                return
+                return $false
             }
         }
 
@@ -759,7 +753,7 @@ function Install-Application {
             if (-not ($hash -and $hash -eq $expected)) {
                 Write-Log "SHA256 mismatch after download. Expected=$expected | Current=$hash. Aborting." "ERROR"
                 try { Remove-Item $localFile -Force -ErrorAction SilentlyContinue } catch {}
-                return
+                return $false
             }
 
             Write-Log "SHA256 OK: $localFile" "INFO"
@@ -767,13 +761,13 @@ function Install-Application {
 
         if (-not (Test-Path $localFile)) {
             Write-Log "Installer nao encontrado apos download: $localFile" "ERROR"
-            return
+            return $false
         }
 
         $fileInfo = Get-Item $localFile -ErrorAction SilentlyContinue
         if (-not $fileInfo -or $fileInfo.Length -le 0) {
             Write-Log "Installer invalido ou vazio: $localFile" "ERROR"
-            return
+            return $false
         }
 
         Write-Log "Executing installer: $localFile" "INFO"
@@ -785,14 +779,14 @@ function Install-Application {
         }
         catch {
             Write-Log "Falha ao executar installer: $localFile | $($_.Exception.Message)" "ERROR"
-            return
+            return $false
         }
 
         if ($App.Install.CleanAfterInstall -eq $true) {
             try { Remove-Item $localFile -Force -ErrorAction SilentlyContinue } catch {}
             Write-Log "Cache cleaned: $localFile" "INFO"
         }
-        return
+        return $true
     }
 
 
@@ -811,7 +805,7 @@ function Install-Application {
 
         if (-not $ok) {
             Write-Log "Falha ao baixar .reg: $($App.Install.RelativePath)" "ERROR"
-            return
+            return $false
         }
 
         # Garante encoding UTF-16 LE com BOM (exigido pelo reg import)
@@ -844,10 +838,11 @@ function Install-Application {
             try { Remove-Item $localFile -Force -ErrorAction SilentlyContinue } catch {}
             Write-Log "Cache cleaned: $localFile" "INFO"
         }
-        return
+        return $true
     }
 
     Write-Log "No valid installation method for $($App.Name)" "ERROR"
+    return $false
 }
 #endregion
 
@@ -871,10 +866,7 @@ function Should-ForceReinstallByVersion {
 }
 
 function Invoke-AppAction {
-    param(
-        [Parameter(Mandatory)] $App,
-        [Parameter(Mandatory)] [ValidateSet("Auto","Manual")] [string]$Mode
-    )
+    param([Parameter(Mandatory)] $App)
 
     $state     = Get-ApplicationState -App $App
     $installed = [bool]$state.Installed
@@ -887,28 +879,15 @@ function Invoke-AppAction {
     if ($installed) {
         Write-Log "$($App.Name) already installed. Checking for updates..." "INFO"
         if ($hasWinget) {
-            if ($Mode -eq "Manual") {
-                $choice = Read-Host "Update $($App.Name) via Winget? (Y/N)"
-                if ($choice -match "^(Y|y)$") { Update-WingetApp -WingetId $App.WingetId | Out-Null }
-                else { Write-Log "Skipped update: $($App.Name)" "INFO" }
-            } else {
-                Update-WingetApp -WingetId $App.WingetId | Out-Null
-            }
+            return (Update-WingetApp -WingetId $App.WingetId)
         } else {
             Write-Log "No WingetId for update: $($App.Name)" "INFO"
+            return $true
         }
-        return
     }
 
     Write-Log "$($App.Name) not installed." "INFO"
-
-    if ($Mode -eq "Manual") {
-        $choice = Read-Host "Install $($App.Name)? (Y/N)"
-        if ($choice -match "^(Y|y)$") { Install-Application -App $App }
-        else { Write-Log "Skipped install: $($App.Name)" "INFO" }
-    } else {
-        Install-Application -App $App
-    }
+    return (Install-Application -App $App)
 }
 
 function Invoke-AppActionManual {
@@ -957,18 +936,61 @@ function Invoke-AppActionManual {
 #endregion
 
 #region Entry points
-function Invoke-ClientInstallation {
+
+function Get-AppPriority {
+    param($App)
+    $p = $App.PSObject.Properties['Priority']
+    if ($p -and $null -ne $p.Value) { return [int]$p.Value }
+    return 100
+}
+
+function Invoke-PostFormatInstallation {
+    # Pos-Formatacao: instala tudo em ordem de prioridade sem deteccao previa.
+    # Indicado para maquinas recem formatadas onde nada esta instalado.
     param([Parameter(Mandatory)] [psobject]$ClientConfig)
 
     [void](Initialize-Winget)
-    Write-Log "Starting AUTO mode for client: $($ClientConfig.Client)" "INFO"
+    Write-Log "Starting POS-FORMATACAO mode for client: $($ClientConfig.Client)" "INFO"
 
-    foreach ($app in $ClientConfig.Applications) {
-        Write-Log "Processing: $($app.Name)" "INFO"
-        Invoke-AppAction -App $app -Mode "Auto"
+    $apps = @($ClientConfig.Applications) | Sort-Object { Get-AppPriority -App $_ }
+    $total = $apps.Count
+    $current = 0
+
+    foreach ($app in $apps) {
+        $current++
+        Write-Host ""
+        Write-Host ("[{0}/{1}] Instalando: {2}" -f $current, $total, $app.Name) -ForegroundColor Yellow
+        Write-Log ("Pos-Formatacao [{0}/{1}]: {2}" -f $current, $total, $app.Name) "INFO"
+        $global:TrivorSessionTotal++
+        $ok = Install-Application -App $app
+        if (-not $ok) { $global:TrivorSessionFailed++ }
     }
 
-    Write-Log "Finished AUTO mode for client: $($ClientConfig.Client)" "INFO"
+    Write-Log "Finished POS-FORMATACAO mode for client: $($ClientConfig.Client)" "INFO"
+}
+
+function Invoke-ClientInstallation {
+    # Compliance: detecta o que esta instalado, instala o que falta e atualiza o que tem WingetId.
+    param([Parameter(Mandatory)] [psobject]$ClientConfig)
+
+    [void](Initialize-Winget)
+    Write-Log "Starting COMPLIANCE mode for client: $($ClientConfig.Client)" "INFO"
+
+    $apps = @($ClientConfig.Applications) | Sort-Object { Get-AppPriority -App $_ }
+    $total = $apps.Count
+    $current = 0
+
+    foreach ($app in $apps) {
+        $current++
+        Write-Host ""
+        Write-Host ("[{0}/{1}] {2}" -f $current, $total, $app.Name) -ForegroundColor Cyan
+        Write-Log ("Compliance [{0}/{1}]: {2}" -f $current, $total, $app.Name) "INFO"
+        $global:TrivorSessionTotal++
+        $ok = Invoke-AppAction -App $app
+        if (-not $ok) { $global:TrivorSessionFailed++ }
+    }
+
+    Write-Log "Finished COMPLIANCE mode for client: $($ClientConfig.Client)" "INFO"
 }
 
 function Invoke-ClientUpdateOnly {
@@ -977,31 +999,23 @@ function Invoke-ClientUpdateOnly {
     [void](Initialize-Winget)
     Write-Log "Starting UPDATE ONLY mode for client: $($ClientConfig.Client)" "INFO"
 
-    foreach ($app in $ClientConfig.Applications) {
-        if ($app.PSObject.Properties.Match("WingetId").Count -gt 0 -and $app.WingetId) {
-            Update-WingetApp -WingetId $app.WingetId | Out-Null
-        } else {
-            Write-Log "No WingetId for update: $($app.Name)" "INFO"
-        }
+    $apps = @($ClientConfig.Applications) | Where-Object {
+        $_.PSObject.Properties.Match("WingetId").Count -gt 0 -and $_.WingetId
+    }
+    $total = $apps.Count
+    $current = 0
+
+    foreach ($app in $apps) {
+        $current++
+        Write-Host ""
+        Write-Host ("[{0}/{1}] {2}" -f $current, $total, $app.Name) -ForegroundColor Cyan
+        Write-Log ("Update [{0}/{1}]: {2}" -f $current, $total, $app.Name) "INFO"
+        $global:TrivorSessionTotal++
+        $ok = Update-WingetApp -WingetId $app.WingetId
+        if (-not $ok) { $global:TrivorSessionFailed++ }
     }
 
     Write-Log "Finished UPDATE ONLY mode for client: $($ClientConfig.Client)" "INFO"
 }
 
-function Invoke-ClientManualInstall {
-    param([Parameter(Mandatory)] [psobject]$ClientConfig)
-
-    [void](Initialize-Winget)
-    Write-Log "Starting MANUAL mode for client: $($ClientConfig.Client)" "INFO"
-
-    foreach ($app in $ClientConfig.Applications) {
-        $r = Invoke-AppActionManual -App $app
-        if ($r -eq "QUIT") {
-            Write-Log "Manual mode aborted by user." "INFO"
-            return
-        }
-    }
-
-    Write-Log "Finished MANUAL mode for client: $($ClientConfig.Client)" "INFO"
-}
 #endregion

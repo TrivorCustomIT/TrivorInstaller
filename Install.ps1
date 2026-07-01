@@ -32,7 +32,6 @@ if (-not $isAdmin) {
 
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
 
-$global:TrivorVersion  = "3.35-manual-status"
 $global:TrivorBasePath = Join-Path $env:TEMP "TrivorInstaller"
 
 function Invoke-Cleanup {
@@ -47,11 +46,15 @@ function Invoke-Cleanup {
 Invoke-Cleanup
 
 try {
+    $global:TrivorExitCode      = 0
+    $global:TrivorSessionTotal  = 0
+    $global:TrivorSessionFailed = 0
+
     $BasePath    = $global:TrivorBasePath
     $CorePath    = Join-Path $BasePath "core"
     $ClientsPath = Join-Path $BasePath "Clientes"
 
-    New-Item -ItemType Directory -Force -Path $CorePath | Out-Null
+    New-Item -ItemType Directory -Force -Path $CorePath    | Out-Null
     New-Item -ItemType Directory -Force -Path $ClientsPath | Out-Null
 
     $Owner  = "TrivorCustomIT"
@@ -78,9 +81,14 @@ try {
         }
         catch {
             Write-Host "ERROR: Failed to download module '$Module'."
+            $global:TrivorExitCode = 1
             exit 1
         }
     }
+
+    $global:TrivorOwner  = $Owner
+    $global:TrivorRepo   = $Repo
+    $global:TrivorBranch = $Branch
 
     $Headers = @{
         "User-Agent" = "TrivorInstaller"
@@ -88,25 +96,25 @@ try {
     }
 
     $ClientsApi = "https://api.github.com/repos/$Owner/$Repo/contents/Clientes?ref=$Branch"
-    $downloadedAny = $false
 
     try {
         $items = Invoke-RestMethod -Uri $ClientsApi -Headers $Headers -ErrorAction Stop
-        foreach ($it in $items) {
-            if ($it.type -eq "file" -and $it.name -like "*.json" -and $it.name -ne "_manifest.json") {
-                $dest = Join-Path $ClientsPath $it.name
-                Invoke-WebRequest -Uri $it.download_url -OutFile $dest -UseBasicParsing
-                $downloadedAny = $true
-            }
-        }
+        $global:TrivorClientNames = @(
+            $items |
+            Where-Object { $_.type -eq "file" -and $_.name -like "*.json" -and $_.name -ne "_manifest.json" } |
+            ForEach-Object { [System.IO.Path]::GetFileNameWithoutExtension($_.name) } |
+            Sort-Object
+        )
     }
     catch {
-        Write-Host "ERROR: Failed to download client list from GitHub API."
+        Write-Host "ERROR: Failed to fetch client list from GitHub API."
+        $global:TrivorExitCode = 1
         exit 1
     }
 
-    if (-not $downloadedAny) {
+    if ($global:TrivorClientNames.Count -eq 0) {
         Write-Host "ERROR: No client JSON files found in 'Clientes' folder."
+        $global:TrivorExitCode = 1
         exit 1
     }
 
@@ -117,6 +125,8 @@ try {
     . "$CorePath\Engine.ps1"
     . "$CorePath\Hostname.ps1"
     . "$CorePath\Menu.ps1"
+
+    $global:TrivorVersion = Get-InstallerVersion
 
     Initialize-Logger
     Start-TrivorTranscript
@@ -133,12 +143,36 @@ catch {
     else {
         Write-Host "Falha fatal no bootstrap: $($_.Exception.Message)"
     }
+    if ($global:TrivorExitCode -eq 0) { $global:TrivorExitCode = 1 }
     throw
 }
 finally {
+    if ($global:TrivorExitCode -eq 0 -and $global:TrivorSessionFailed -gt 0) {
+        $global:TrivorExitCode = 2
+    }
+
+    if ($global:TrivorSessionTotal -gt 0) {
+        $successCount = $global:TrivorSessionTotal - $global:TrivorSessionFailed
+        if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
+            Write-Log ("Sessao encerrada: {0} ok / {1} falhas / {2} total" -f $successCount, $global:TrivorSessionFailed, $global:TrivorSessionTotal) "INFO"
+        }
+        Write-Host ""
+        Write-Host ("Sessao: {0} instalados com sucesso, {1} falhas." -f $successCount, $global:TrivorSessionFailed) -ForegroundColor $(if ($global:TrivorSessionFailed -gt 0) { "Yellow" } else { "Green" })
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($global:TrivorLogFile)) {
+        Write-Host ""
+        Write-Host "Log da sessao salvo em:" -ForegroundColor DarkGray
+        Write-Host "  $global:TrivorLogFile" -ForegroundColor Gray
+        if (-not [string]::IsNullOrWhiteSpace($global:TrivorTranscriptFile)) {
+            Write-Host "  $global:TrivorTranscriptFile" -ForegroundColor Gray
+        }
+    }
+
     if (Get-Command Stop-TrivorTranscript -ErrorAction SilentlyContinue) {
         Stop-TrivorTranscript
     }
 
     Invoke-Cleanup
+    exit $global:TrivorExitCode
 }

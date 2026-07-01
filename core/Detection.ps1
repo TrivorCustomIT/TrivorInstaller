@@ -268,10 +268,12 @@ function Get-ApplicationState {
         return $state
     }
 
-    if ($method -eq "Registry" -and $d.DisplayName) {
-        if (Test-RegistryApp -DisplayName $d.DisplayName) {
+    if ($method -eq "Registry") {
+        # aceita RegistryDisplayName (padrao Hybrid) ou DisplayName (legado)
+        $regName = if ($d.RegistryDisplayName) { $d.RegistryDisplayName } else { $d.DisplayName }
+        if ($regName -and (Test-RegistryApp -DisplayName $regName)) {
             $state.Installed = $true; $state.Source = "Registry"
-            $state.Version = Get-RegistryAppVersion -DisplayName $d.DisplayName
+            $state.Version = Get-RegistryAppVersion -DisplayName $regName
         }
         return $state
     }

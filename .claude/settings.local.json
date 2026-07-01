@@ -7,7 +7,10 @@
       "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\FernandoOliveira\\\\Documents\\\\TrivorInstaller\\\\TrivorInstaller\" -Recurse)",
       "Bash(Select-Object FullName, PSIsContainer)",
       "Bash(Sort-Object FullName)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(Get-ChildItem -Path \"D:\\\\Users\\\\nandi\\\\Projects\\\\TrivorInstaller\" -Recurse -Force)",
+      "Bash(Format-Table -AutoSize)",
+      "PowerShell(Get-Content D:\\\\Users\\\\nandi\\\\Projects\\\\TrivorInstaller\\\\Install.ps1 | Where-Object {$_ -match \"TODO|FIXME|HACK|XXX|BUG\"})"
     ]
   }
 }
