@@ -1,5 +1,6 @@
 ﻿{
  "Client": "FMCSV",
+ "HostnamePrefix": "FMC",
   "Applications": [
     {
       "Id": "7zip",
@@ -62,24 +63,6 @@
         "Url": "https://api.us0.swi-rc.com/download/getpcinstall.php?iid=874f6c92-17ca-11f1-b22b-0affd1392461",
         "SilentArgs": "/silent",
         "CacheFileName": "TakeControlAgent.exe",
-        "Sha256": "",
-        "CleanAfterInstall": true
-      }
-    },
-    {
-      "Id": "kaspersky",
-      "Name": "Kaspersky Endpoint Security",
-      "Detection": {
-        "Method": "Hybrid",
-        "RegistryDisplayName": "Kaspersky Endpoint Security",
-        "ServiceName": "Kaspersky Endpoint Security Service",
-        "ServiceDisplayName": "Kaspersky Endpoint Security"
-      },
-      "Install": {
-        "Method": "UrlExe",
-        "Url": "https://s219.cloud.kaspersky.com:8080/getPackage?vServerName=dac2c83e-7114-48d9-898b-edbaf4674dc6",
-        "SilentArgs": "/silent",
-        "CacheFileName": "KasperskyEndpointSecurity.exe",
         "Sha256": "",
         "CleanAfterInstall": true
       }
