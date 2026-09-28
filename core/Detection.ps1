@@ -48,17 +48,29 @@ function Get-RegistryUninstallPaths {
 }
 
 function Find-AppInRegistry {
-    # Retorna o objeto de registro do app ou $null
+    # Retorna o objeto de registro do app ou $null.
+    # Prioridade de match: exato > prefixo > contem. Evita que um nome curto
+    # (ex: "Zoom") pegue outro produto quando existe um match mais preciso.
     param([Parameter(Mandatory)] [string]$DisplayName)
+
+    $prefixMatch   = $null
+    $containsMatch = $null
+
     foreach ($path in (Get-RegistryUninstallPaths)) {
         try {
-            $app = Get-ItemProperty $path -ErrorAction SilentlyContinue |
-                   Where-Object { $_.DisplayName -like "*$DisplayName*" } |
-                   Select-Object -First 1
-            if ($app) { return $app }
+            $candidates = Get-ItemProperty $path -ErrorAction SilentlyContinue |
+                          Where-Object { $_.DisplayName -and $_.DisplayName -like "*$DisplayName*" }
+            foreach ($c in $candidates) {
+                $name = ([string]$c.DisplayName).Trim()
+                if ($name -eq $DisplayName) { return $c }
+                if (-not $prefixMatch -and $name -like "$DisplayName*") { $prefixMatch = $c }
+                if (-not $containsMatch) { $containsMatch = $c }
+            }
         } catch {}
     }
-    return $null
+
+    if ($prefixMatch) { return $prefixMatch }
+    return $containsMatch
 }
 
 #endregion
@@ -110,17 +122,25 @@ function Initialize-WingetListCache {
     }
 }
 
+function Get-WingetIdPattern {
+    # Match do Id como coluna inteira (delimitado por espaco/inicio/fim de linha).
+    # Evita que "Mozilla.Firefox" case com "Mozilla.Firefox.ESR".
+    param([Parameter(Mandatory)] [string]$WingetId)
+    return ('(?im)(^|\s){0}(\s|$)' -f [regex]::Escape($WingetId))
+}
+
 function Test-WingetInCache {
     param([string]$WingetId)
     if ([string]::IsNullOrWhiteSpace($global:TrivorWingetListCache)) { return $false }
-    return ($global:TrivorWingetListCache -match [regex]::Escape($WingetId))
+    return ($global:TrivorWingetListCache -match (Get-WingetIdPattern -WingetId $WingetId))
 }
 
 function Get-WingetVersionFromCache {
     param([string]$WingetId)
     if ([string]::IsNullOrWhiteSpace($global:TrivorWingetListCache)) { return $null }
+    $pattern = Get-WingetIdPattern -WingetId $WingetId
     foreach ($line in ($global:TrivorWingetListCache -split "`n")) {
-        if ($line -match [regex]::Escape($WingetId)) {
+        if ($line -match $pattern) {
             $parts = $line -split '\s{2,}'
             if ($parts.Count -ge 3) { return $parts[2].Trim() }
         }
