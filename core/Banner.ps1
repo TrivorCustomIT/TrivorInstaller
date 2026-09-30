@@ -1,16 +1,33 @@
-$global:TrivorVersionCache = $null
+$global:TrivorVersionCache    = $null
+$global:TrivorVersionFallback = "v3.4.4"
+
+function Select-LatestSemVerTag {
+    # Retorna a maior tag no padrao maior.menor.bug (vX.Y.Z).
+    # Tags legadas fora do padrao (ex: v3.41, v.3.4.2) sao ignoradas, pois a
+    # API do GitHub nao ordena por versao e elas apareciam antes da mais recente.
+    param([string[]]$TagNames)
+
+    $valid = @(
+        $TagNames |
+        Where-Object { $_ -match '^v(\d+)\.(\d+)\.(\d+)$' } |
+        Sort-Object -Property @{ Expression = { [version]($_.Substring(1)) } } -Descending
+    )
+    if ($valid.Count -gt 0) { return $valid[0] }
+    return $null
+}
 
 function Get-InstallerVersion {
     if ($global:TrivorVersionCache) { return $global:TrivorVersionCache }
     try {
         $headers = @{ "User-Agent" = "TrivorInstaller" }
-        $tags = Invoke-RestMethod -Uri "https://api.github.com/repos/TrivorCustomIT/TrivorInstaller/tags" -Headers $headers -ErrorAction Stop
-        if ($tags -and $tags.Count -gt 0) {
-            $global:TrivorVersionCache = $tags[0].name
+        $tags = Invoke-RestMethod -Uri "https://api.github.com/repos/TrivorCustomIT/TrivorInstaller/tags?per_page=100" -Headers $headers -ErrorAction Stop
+        $latest = Select-LatestSemVerTag -TagNames @($tags | ForEach-Object { $_.name })
+        if ($latest) {
+            $global:TrivorVersionCache = $latest
             return $global:TrivorVersionCache
         }
     } catch {}
-    $global:TrivorVersionCache = "v3.40"
+    $global:TrivorVersionCache = $global:TrivorVersionFallback
     return $global:TrivorVersionCache
 }
 

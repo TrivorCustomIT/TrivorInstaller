@@ -160,6 +160,13 @@ finally {
         Write-Host ("Sessao: {0} instalados com sucesso, {1} falhas." -f $successCount, $global:TrivorSessionFailed) -ForegroundColor $(if ($global:TrivorSessionFailed -gt 0) { "Yellow" } else { "Green" })
     }
 
+    if ($global:TrivorRebootRequired) {
+        if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
+            Write-Log "Reinicio pendente: um ou mais instaladores solicitaram reinicio." "WARN"
+        }
+        Write-Host "[ATENCAO] Um ou mais instaladores solicitaram reinicio da maquina." -ForegroundColor Yellow
+    }
+
     if (-not [string]::IsNullOrWhiteSpace($global:TrivorLogFile)) {
         Write-Host ""
         Write-Host "Log da sessao salvo em:" -ForegroundColor DarkGray

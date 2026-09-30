@@ -136,7 +136,7 @@ function Invoke-TrivorDownloadWithProgress {
                 $request.MaximumAutomaticRedirections = 10
                 $request.Timeout = 300000
                 $request.ReadWriteTimeout = 300000
-                $request.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) TrivorInstaller/3.40"
+                $request.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) TrivorInstaller/3.4.4"
                 $request.Accept = "*/*"
 
                 $response = $request.GetResponse()
@@ -255,6 +255,100 @@ function Invoke-TrivorDownloadWithProgress {
         return $false
     }
 }
+
+#region Exit codes
+
+# Codigos oficiais do winget (doc/windows/package-manager/winget/returnCodes.md)
+$global:TrivorWingetCodeUpdateNotApplicable = [int32]-1978335189  # 0x8A15002B - nenhuma atualizacao aplicavel
+$global:TrivorWingetCodeAlreadyInstalled    = [int32]-1978335135  # 0x8A150061 - pacote ja instalado
+$global:TrivorWingetCodeRebootToFinish      = [int32]-1978334967  # 0x8A150109 - reiniciar para concluir
+$global:TrivorWingetCodeRebootInitiated     = [int32]-1978334965  # 0x8A15010B - reinicio iniciado
+
+# Instaladores MSI/EXE: 0 = ok, 3010 = ok com reinicio pendente, 1641 = ok e reinicio iniciado
+$global:TrivorInstallerSuccessCodes = @(0, 3010, 1641)
+$global:TrivorInstallerRebootCodes  = @(3010, 1641)
+
+$global:TrivorRebootRequired = $false
+
+function ConvertTo-TrivorInt32 {
+    # Converte exit codes vindos como UInt32 (ex: LastTaskResult da Scheduled Task)
+    # para Int32 com sinal, sem estourar em HRESULTs como 0x8A15002B.
+    param($Value)
+    if ($null -eq $Value) { return -1 }
+    try {
+        $v = [int64]$Value
+        if ($v -ge [int32]::MinValue -and $v -le [int32]::MaxValue) { return [int32]$v }
+        if ($v -ge 0 -and $v -le [uint32]::MaxValue) { return [int32]($v - 4294967296) }
+        return -1
+    } catch {
+        return -1
+    }
+}
+
+function Test-WingetExitCodeSuccess {
+    # Define se o exit code do winget deve ser tratado como sucesso para a operacao.
+    param(
+        $ExitCode,
+        [ValidateSet("install", "upgrade")] [string]$Operation = "install"
+    )
+
+    # Normaliza (null -> -1, UInt32 -> Int32) para nunca tratar ausencia de codigo como sucesso
+    $ExitCode = ConvertTo-TrivorInt32 $ExitCode
+
+    if ($ExitCode -eq 0) { return $true }
+
+    if ($ExitCode -eq $global:TrivorWingetCodeRebootToFinish -or $ExitCode -eq $global:TrivorWingetCodeRebootInitiated) {
+        $global:TrivorRebootRequired = $true
+        Write-Log "Winget: instalacao concluida, reinicio necessario (ExitCode=$ExitCode)." "WARN"
+        return $true
+    }
+
+    if ($Operation -eq "upgrade" -and $ExitCode -eq $global:TrivorWingetCodeUpdateNotApplicable) {
+        Write-Log "Winget: nenhuma atualizacao disponivel (ja esta na versao mais recente)." "INFO"
+        return $true
+    }
+
+    if ($Operation -eq "install" -and $ExitCode -eq $global:TrivorWingetCodeAlreadyInstalled) {
+        Write-Log "Winget: pacote ja instalado." "INFO"
+        return $true
+    }
+
+    return $false
+}
+
+function Test-InstallerExitCodeSuccess {
+    # Valida exit code de instalador EXE/MSI. Aceita override por app via
+    # Install.SuccessExitCodes no JSON do cliente (ex: [0, 1, 3010]).
+    param(
+        [Parameter(Mandatory)] $App,
+        $ExitCode
+    )
+
+    if ($null -eq $ExitCode) {
+        Write-Log "Installer sem exit code: $($App.Name). Considerando falha." "ERROR"
+        return $false
+    }
+
+    $code = ConvertTo-TrivorInt32 $ExitCode
+    $successCodes = $global:TrivorInstallerSuccessCodes
+    if ($App.Install -and $App.Install.PSObject.Properties.Match("SuccessExitCodes").Count -gt 0 -and $App.Install.SuccessExitCodes) {
+        $successCodes = @($App.Install.SuccessExitCodes | ForEach-Object { [int]$_ })
+    }
+
+    if ($successCodes -notcontains $code) {
+        Write-Log "Installer falhou: $($App.Name) | ExitCode=$code | Aceitos=$($successCodes -join ',')" "ERROR"
+        return $false
+    }
+
+    if ($global:TrivorInstallerRebootCodes -contains $code) {
+        $global:TrivorRebootRequired = $true
+        Write-Log "Installer concluido, reinicio necessario: $($App.Name) | ExitCode=$code" "WARN"
+    }
+
+    return $true
+}
+
+#endregion
 
 #region Winget - contexto normal ou RMM/SYSTEM via usuario logado
 
@@ -509,8 +603,14 @@ catch {
             $state = if ($task) { $task.State } else { "Unknown" }
         } while ($state -eq "Running" -and $elapsed -lt $timeout)
 
+        if ($state -eq "Running") {
+            Write-Log "Timeout de ${timeout}s aguardando Winget ($OperationName). Encerrando Scheduled Task $taskName." "ERROR"
+            Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+            return @{ Success = $false; ExitCode = -1; StdOut = $stdout; StdErr = $stderr }
+        }
+
         $info = Get-ScheduledTaskInfo -TaskName $taskName -ErrorAction SilentlyContinue
-        $exitCode = if ($info) { [int]$info.LastTaskResult } else { -1 }
+        $exitCode = if ($info) { ConvertTo-TrivorInt32 $info.LastTaskResult } else { -1 }
 
         return @{ Success = ($exitCode -eq 0); ExitCode = $exitCode; StdOut = $stdout; StdErr = $stderr }
     }
@@ -579,6 +679,7 @@ function Install-WingetApp {
 
     Write-Log "Installing via Winget: $WingetId" "INFO"
     $result = Invoke-WingetAsUser -Arguments "install --id `"$WingetId`" --exact --source winget --silent --accept-package-agreements --accept-source-agreements --disable-interactivity" -OperationName "install_$WingetId"
+    $result.Success = Test-WingetExitCodeSuccess -ExitCode $result.ExitCode -Operation "install"
     Write-WingetResult -Action "WingetInstall" -Target $WingetId -Result $result
     return $result.Success
 }
@@ -588,6 +689,7 @@ function Update-WingetApp {
 
     Write-Log "Updating via Winget: $WingetId" "INFO"
     $result = Invoke-WingetAsUser -Arguments "upgrade --id `"$WingetId`" --exact --source winget --silent --include-unknown --accept-package-agreements --accept-source-agreements --disable-interactivity" -OperationName "upgrade_$WingetId"
+    $result.Success = Test-WingetExitCodeSuccess -ExitCode $result.ExitCode -Operation "upgrade"
     Write-WingetResult -Action "WingetUpgrade" -Target $WingetId -Result $result
     return $result.Success
 }
@@ -595,6 +697,7 @@ function Update-WingetApp {
 function Upgrade-WingetAll {
     Write-Log "Running: winget upgrade --all" "INFO"
     $result = Invoke-WingetAsUser -Arguments "upgrade --all --silent --include-unknown --accept-package-agreements --accept-source-agreements --disable-interactivity" -OperationName "upgrade_all"
+    $result.Success = Test-WingetExitCodeSuccess -ExitCode $result.ExitCode -Operation "upgrade"
     Write-WingetResult -Action "WingetUpgradeAll" -Target "ALL" -Result $result
     return $result.Success
 }
@@ -638,6 +741,7 @@ function Invoke-WingetUpgradeAllWithDisplay {
 
     if ($isSystem) {
         $result = Invoke-WingetAsUser -Arguments "upgrade --all --include-unknown --accept-package-agreements --accept-source-agreements --disable-interactivity" -OperationName "upgrade_all_display"
+        $result.Success = Test-WingetExitCodeSuccess -ExitCode $result.ExitCode -Operation "upgrade"
         Write-WingetResult -Action "WingetUpgradeAll" -Target "ALL" -Result $result
         if ($result.StdOut -and (Test-Path $result.StdOut)) {
             Get-Content $result.StdOut -Encoding UTF8 | ForEach-Object { Write-Host $_ }
@@ -651,9 +755,15 @@ function Invoke-WingetUpgradeAllWithDisplay {
         }
     } else {
         & $global:TrivorWingetExe upgrade --all --include-unknown --accept-package-agreements --accept-source-agreements 2>&1 | ForEach-Object { Write-Host $_ }
+        $upgradeExit = ConvertTo-TrivorInt32 $LASTEXITCODE
         Write-Host ""
-        Write-Host "Upgrade concluido." -ForegroundColor Green
-        Write-Log "winget upgrade --all finalizado" "INFO"
+        if (Test-WingetExitCodeSuccess -ExitCode $upgradeExit -Operation "upgrade") {
+            Write-Host "Upgrade concluido." -ForegroundColor Green
+            Write-Log "winget upgrade --all finalizado | ExitCode=$upgradeExit" "INFO"
+        } else {
+            Write-Host "Upgrade finalizado com erros. Verifique o log." -ForegroundColor Yellow
+            Write-Log "winget upgrade --all finalizado com erro | ExitCode=$upgradeExit" "ERROR"
+        }
     }
 }
 #endregion
@@ -693,13 +803,22 @@ function Install-Application {
 
         Write-Log "Executing installer: $localFile" "INFO"
         $installArgs = if ($App.Install.SilentArgs) { $App.Install.SilentArgs } else { "" }
-        Start-Process -FilePath $localFile -ArgumentList $installArgs -Wait -NoNewWindow
+
+        $installOk = $false
+        try {
+            $p = Start-Process -FilePath $localFile -ArgumentList $installArgs -Wait -NoNewWindow -PassThru
+            Write-Log "Installer finished: $($App.Name) | ExitCode=$($p.ExitCode)" "INFO"
+            $installOk = Test-InstallerExitCodeSuccess -App $App -ExitCode $p.ExitCode
+        }
+        catch {
+            Write-Log "Falha ao executar installer: $localFile | $($_.Exception.Message)" "ERROR"
+        }
 
         if ($App.Install.CleanAfterInstall -eq $true) {
             try { Remove-Item $localFile -Force -ErrorAction SilentlyContinue } catch {}
             Write-Log "Cache cleaned: $localFile" "INFO"
         }
-        return $true
+        return $installOk
     }
 
     # 3) UrlExe
@@ -773,9 +892,11 @@ function Install-Application {
         Write-Log "Executing installer: $localFile" "INFO"
         $installArgs = if ($App.Install.SilentArgs) { $App.Install.SilentArgs } else { "" }
 
+        $installOk = $false
         try {
             $p = Start-Process -FilePath $localFile -ArgumentList $installArgs -Wait -NoNewWindow -PassThru
             Write-Log "Installer finished: $($App.Name) | ExitCode=$($p.ExitCode)" "INFO"
+            $installOk = Test-InstallerExitCodeSuccess -App $App -ExitCode $p.ExitCode
         }
         catch {
             Write-Log "Falha ao executar installer: $localFile | $($_.Exception.Message)" "ERROR"
@@ -786,7 +907,7 @@ function Install-Application {
             try { Remove-Item $localFile -Force -ErrorAction SilentlyContinue } catch {}
             Write-Log "Cache cleaned: $localFile" "INFO"
         }
-        return $true
+        return $installOk
     }
 
 
@@ -823,12 +944,14 @@ function Install-Application {
         }
 
         Write-Log "Aplicando registry: $localFile" "INFO"
+        $regOk = $false
         try {
             $result = Start-Process -FilePath "reg.exe" -ArgumentList "import `"$localFile`"" -Wait -NoNewWindow -PassThru
             if ($result.ExitCode -eq 0) {
                 Write-Log "Registry aplicado com sucesso: $cacheFileName" "INFO"
+                $regOk = $true
             } else {
-                Write-Log "reg import retornou codigo $($result.ExitCode)" "WARN"
+                Write-Log "reg import falhou: $cacheFileName | ExitCode=$($result.ExitCode)" "ERROR"
             }
         } catch {
             Write-Log "Erro ao aplicar registry: $_" "ERROR"
@@ -838,7 +961,7 @@ function Install-Application {
             try { Remove-Item $localFile -Force -ErrorAction SilentlyContinue } catch {}
             Write-Log "Cache cleaned: $localFile" "INFO"
         }
-        return $true
+        return $regOk
     }
 
     Write-Log "No valid installation method for $($App.Name)" "ERROR"
