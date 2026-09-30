@@ -7,7 +7,7 @@ function Wait-Enter {
 }
 
 function Get-ClientsPath {
-    return Join-Path $env:TEMP "TrivorInstaller\Clientes"
+    return Join-Path $global:TrivorBasePath "Clientes"
 }
 
 function Get-ClientList {

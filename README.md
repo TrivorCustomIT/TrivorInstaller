@@ -40,3 +40,16 @@ Instaladores EXE/MSI (`RepoExePublic` e `UrlExe`) são considerados bem-sucedido
       "SilentArgs": "/silent",
       "SuccessExitCodes": [0, 1]
     }
+
+Instaladores sem `Sha256` só são executados se tiverem assinatura digital válida (Authenticode).
+Para exigir também um fabricante específico, informe a organização do certificado (campo O=) em
+`Install.Signer`:
+
+    "Install": {
+      "Method": "UrlExe",
+      "Url": "https://api.us0.swi-rc.com/download/getpcinstall.php?iid=...",
+      "Signer": "N-ABLE TECHNOLOGIES LTD",
+      "SilentArgs": "/silent"
+    }
+
+Quando o `Sha256` é informado, ele tem prioridade e a assinatura não é verificada.

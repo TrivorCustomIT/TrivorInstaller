@@ -7,6 +7,15 @@ function Initialize-Logger {
         [string]$LogDir = $global:TrivorLogDir
     )
 
+    # C:\TrivorInstaller herda de C:\ permissao de escrita para usuarios comuns.
+    # Restringe a SYSTEM/Administradores (logs podem conter URLs de instaladores de clientes)
+    # e remove junctions plantadas antes de gravar como SYSTEM.
+    $rootDir = Split-Path $LogDir -Parent
+    if ((Get-Command Protect-TrivorDirectory -ErrorAction SilentlyContinue) -and $rootDir) {
+        $null = Protect-TrivorDirectory -Path $rootDir -ResetChildren
+        if (Test-Path -LiteralPath $LogDir) { $null = Protect-TrivorDirectory -Path $LogDir -ResetChildren }
+    }
+
     if (-not (Test-Path $LogDir)) {
         New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
     }

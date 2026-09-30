@@ -6,6 +6,37 @@ Padrão de versão (a partir da v3.4.2): `vMAIOR.MENOR.BUG`, por exemplo `v3.4.4
 
 ---
 
+## v3.4.5 — Sprint 2: segurança
+
+### Corrigido (vulnerabilidades)
+
+- **Execução de código como SYSTEM via cache plantado.** Em contexto RMM/SYSTEM, a pasta de trabalho era `C:\Windows\Temp\TrivorInstaller`, com nome fixo, num local onde usuários comuns podem criar arquivos. Um usuário podia deixar ali, antes da execução, um instalador (ex.: `TakeControlAgent.exe`), um módulo `.ps1` ou um JSON de cliente, e o instalador executava ou carregava esse arquivo como SYSTEM.
+  - A pasta de trabalho agora tem nome aleatório (`TrivorInstaller_<GUID>`) e ACL restrita a SYSTEM e Administradores, aplicada antes de qualquer download.
+  - Cache, módulos e JSONs de clientes ficam dentro dessa pasta.
+- **Exclusão arbitrária como SYSTEM via junction.** A limpeza fazia `Remove-Item -Recurse` no caminho fixo. Uma junction criada ali por um usuário comum levava o PowerShell 5.1 a apagar o conteúdo do destino. A remoção agora nunca segue links: junctions e symlinks são removidos sem tocar no destino.
+- **`C:\TrivorInstaller` gravável por usuários comuns.** A pasta herdava de `C:\` permissão de modificação para Usuários Autenticados, o que permitia alterar ou ler logs (que contêm URLs de instalação dos clientes) e plantar junctions nos caminhos em que o SYSTEM grava.
+  - A pasta e todo o conteúdo existente passam a ter dono Administradores, sem herança, com acesso apenas para SYSTEM e Administradores.
+  - Links encontrados dentro dela são removidos antes da aplicação da ACL.
+- **Winget via Scheduled Task:** cada execução usa uma subpasta própria em `C:\TrivorInstaller\Winget`. Somente o usuário logado (pelo SID) recebe permissão de Modificar, e apenas nessa subpasta.
+
+### Adicionado
+
+- **Validação de assinatura digital (Authenticode) para instaladores sem SHA256** (`UrlExe` e `RepoExePublic`). O instalador só executa se a assinatura for válida.
+  - Novo campo opcional `Install.Signer`: exige que o certificado seja da organização informada (campo O= do certificado).
+  - Instalador sem hash nunca é reaproveitado do cache: é sempre baixado de novo e validado.
+  - Os 12 clientes com Take Control passam a exigir o assinante `N-ABLE TECHNOLOGIES LTD`, verificado no instalador real (certificado EV DigiCert, válido até 06/2027).
+- `.gitignore` com `.claude/settings.local.json`, que deixa de ser versionado (continha caminhos locais da máquina de desenvolvimento).
+
+### Removido
+
+- TLS 1.0 e 1.1 nos downloads. Agora apenas TLS 1.2 e, quando o .NET suportar, TLS 1.3.
+
+### Alterado
+
+- User-Agent e versão de fallback atualizados para 3.4.5.
+
+---
+
 ## v3.4.4 — Sprint 1: correção de bugs
 
 ### Corrigido

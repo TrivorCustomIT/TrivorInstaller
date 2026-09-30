@@ -1,0 +1,2 @@
+# Configuracao local do Claude Code (caminhos e permissoes da maquina de cada desenvolvedor)
+.claude/settings.local.json

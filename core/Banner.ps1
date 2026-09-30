@@ -1,5 +1,5 @@
 $global:TrivorVersionCache    = $null
-$global:TrivorVersionFallback = "v3.4.4"
+$global:TrivorVersionFallback = "v3.4.5"
 
 function Select-LatestSemVerTag {
     # Retorna a maior tag no padrao maior.menor.bug (vX.Y.Z).

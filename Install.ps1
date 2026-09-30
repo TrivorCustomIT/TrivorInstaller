@@ -30,20 +30,131 @@ if (-not $isAdmin) {
     }
 }
 
+# Somente TLS 1.2 (e 1.3 quando o .NET suportar)
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
+try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls13 } catch { Write-Verbose "TLS 1.3 indisponivel neste .NET; usando TLS 1.2." }
 
-$global:TrivorBasePath = Join-Path $env:TEMP "TrivorInstaller"
+#region Seguranca de diretorios
 
-function Invoke-Cleanup {
+function Test-TrivorReparsePoint {
+    param([Parameter(Mandatory)] [string]$Path)
     try {
-        if (Test-Path $global:TrivorBasePath) {
-            Remove-Item $global:TrivorBasePath -Recurse -Force -ErrorAction SilentlyContinue
-        }
+        $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+        return [bool]($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint)
     }
-    catch {}
+    catch { return $false }
 }
 
-Invoke-Cleanup
+function Remove-TrivorReparsePoints {
+    # Percorre a arvore sem nunca descer em reparse points e remove apenas os links
+    # (junction/symlink), preservando o destino. Retorna a quantidade removida.
+    param([Parameter(Mandatory)] [string]$Path)
+
+    $removed = 0
+    foreach ($child in @(Get-ChildItem -LiteralPath $Path -Force -ErrorAction SilentlyContinue)) {
+        if ($child.Attributes -band [System.IO.FileAttributes]::ReparsePoint) {
+            Write-Host "[WARN] Link removido: $($child.FullName)" -ForegroundColor Yellow
+            try {
+                if ($child.PSIsContainer) { [System.IO.Directory]::Delete($child.FullName) } else { [System.IO.File]::Delete($child.FullName) }
+                $removed++
+            } catch {
+                Write-Host "[WARN] Nao foi possivel remover o link $($child.FullName): $($_.Exception.Message)" -ForegroundColor Yellow
+            }
+        }
+        elseif ($child.PSIsContainer) {
+            $removed += Remove-TrivorReparsePoints -Path $child.FullName
+        }
+    }
+    return $removed
+}
+
+function Remove-TrivorDirectorySafe {
+    # Remove um diretorio sem nunca seguir junctions/symlinks. Se o caminho for um
+    # reparse point, remove apenas o link, preservando o destino.
+    param([Parameter(Mandatory)] [string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path)) { return }
+
+    if (Test-TrivorReparsePoint -Path $Path) {
+        Write-Host "[WARN] '$Path' e um link (junction/symlink). Removendo apenas o link." -ForegroundColor Yellow
+        [System.IO.Directory]::Delete($Path)
+        return
+    }
+
+    # Links internos sao removidos antes, para o Remove-Item recursivo nao entrar neles
+    $null = Remove-TrivorReparsePoints -Path $Path
+
+    Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+function Protect-TrivorDirectory {
+    # Cria (se necessario) e restringe um diretorio: dono Administradores, sem heranca,
+    # Controle Total somente para SYSTEM e Administradores. SIDs evitam problema com
+    # nomes localizados (ex: "Administradores" em pt-BR).
+    # -ModifySids concede Modificar a SIDs adicionais (ex: usuario logado da Scheduled Task).
+    # -ResetChildren aplica a nova ACL a arquivos/pastas ja existentes.
+    param(
+        [Parameter(Mandatory)] [string]$Path,
+        [string[]]$ModifySids = @(),
+        [switch]$ResetChildren
+    )
+
+    try {
+        if ((Test-Path -LiteralPath $Path) -and (Test-TrivorReparsePoint -Path $Path)) {
+            Write-Host "[WARN] '$Path' e um link (junction/symlink). Removendo o link e recriando o diretorio." -ForegroundColor Yellow
+            [System.IO.Directory]::Delete($Path)
+        }
+        if (-not (Test-Path -LiteralPath $Path)) {
+            New-Item -ItemType Directory -Force -Path $Path | Out-Null
+        }
+
+        $inherit = [System.Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit'
+        $noProp  = [System.Security.AccessControl.PropagationFlags]::None
+        $allow   = [System.Security.AccessControl.AccessControlType]::Allow
+        $admins  = New-Object System.Security.Principal.SecurityIdentifier("S-1-5-32-544")
+        $system  = New-Object System.Security.Principal.SecurityIdentifier("S-1-5-18")
+
+        $acl = New-Object System.Security.AccessControl.DirectorySecurity
+        $acl.SetOwner($admins)
+        $acl.SetAccessRuleProtection($true, $false)
+        foreach ($sid in @($system, $admins)) {
+            $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($sid, 'FullControl', $inherit, $noProp, $allow)))
+        }
+        foreach ($s in $ModifySids) {
+            if ([string]::IsNullOrWhiteSpace($s)) { continue }
+            $sid = New-Object System.Security.Principal.SecurityIdentifier($s)
+            $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($sid, 'Modify', $inherit, $noProp, $allow)))
+        }
+
+        Set-Acl -LiteralPath $Path -AclObject $acl -ErrorAction Stop
+
+        if ($ResetChildren -and (Get-ChildItem -LiteralPath $Path -Force -ErrorAction SilentlyContinue)) {
+            # Links internos sao removidos antes, para o icacls /T nunca alterar o destino deles
+            $null = Remove-TrivorReparsePoints -Path $Path
+
+            # Dono Administradores e ACL apenas herdada em tudo que ja existia
+            & icacls.exe "$Path\*" /setowner "*S-1-5-32-544" /T /C /Q 2>&1 | Out-Null
+            & icacls.exe "$Path\*" /reset /T /C /Q 2>&1 | Out-Null
+        }
+        return $true
+    }
+    catch {
+        Write-Host "[WARN] Nao foi possivel restringir permissoes de '$Path': $($_.Exception.Message)" -ForegroundColor Yellow
+        return $false
+    }
+}
+
+#endregion
+
+# Diretorio de trabalho com nome aleatorio e ACL restrita. Em contexto SYSTEM o TEMP e
+# C:\Windows\Temp, onde usuarios comuns podem criar arquivos: um nome fixo permitia
+# plantar instaladores/modulos ou uma junction antes da execucao.
+$global:TrivorBasePath = Join-Path $env:TEMP ("TrivorInstaller_" + [guid]::NewGuid().ToString('N'))
+
+function Invoke-Cleanup {
+    try { Remove-TrivorDirectorySafe -Path $global:TrivorBasePath }
+    catch { Write-Host "[WARN] Falha na limpeza de $($global:TrivorBasePath): $($_.Exception.Message)" -ForegroundColor Yellow }
+}
 
 try {
     $global:TrivorExitCode      = 0
@@ -54,6 +165,9 @@ try {
     $CorePath    = Join-Path $BasePath "core"
     $ClientsPath = Join-Path $BasePath "Clientes"
 
+    if (-not (Protect-TrivorDirectory -Path $BasePath)) {
+        Write-Host "[WARN] Continuando com diretorio de trabalho sem ACL restrita: $BasePath" -ForegroundColor Yellow
+    }
     New-Item -ItemType Directory -Force -Path $CorePath    | Out-Null
     New-Item -ItemType Directory -Force -Path $ClientsPath | Out-Null
 

@@ -74,6 +74,54 @@ function Ensure-DownloadedWithSha256 {
 }
 #endregion
 
+#region Authenticode
+function Get-TrivorCertOrganization {
+    # Extrai o campo O= (organizacao) do Subject do certificado.
+    param([string]$Subject)
+    if ([string]::IsNullOrWhiteSpace($Subject)) { return $null }
+    if ($Subject -match '(?:^|,\s*)O=(?:"([^"]+)"|([^,]+))') {
+        $org = if ($Matches[1]) { $Matches[1] } else { $Matches[2] }
+        return $org.Trim()
+    }
+    return $null
+}
+
+function Test-TrivorInstallerSignature {
+    # Valida a assinatura digital (Authenticode) de um instalador baixado sem SHA256.
+    # Exige assinatura valida e, se ExpectedSigner for informado (Install.Signer no JSON),
+    # que a organizacao do certificado seja exatamente essa.
+    param(
+        [Parameter(Mandatory)] [string]$Path,
+        [string]$ExpectedSigner
+    )
+
+    try {
+        $sig = Get-AuthenticodeSignature -FilePath $Path -ErrorAction Stop
+    }
+    catch {
+        Write-Log "Falha ao verificar assinatura de ${Path}: $($_.Exception.Message)" "ERROR"
+        return $false
+    }
+
+    $status = [string]$sig.Status
+    if ($status -ne "Valid") {
+        Write-Log "Assinatura digital invalida: $Path | Status=$status | $($sig.StatusMessage)" "ERROR"
+        return $false
+    }
+
+    $subject = if ($sig.SignerCertificate) { $sig.SignerCertificate.Subject } else { "" }
+    $org = Get-TrivorCertOrganization -Subject $subject
+
+    if (-not [string]::IsNullOrWhiteSpace($ExpectedSigner) -and $org -ne $ExpectedSigner.Trim()) {
+        Write-Log "Assinante inesperado: $Path | Esperado='$ExpectedSigner' | Encontrado='$org' | Subject=$subject" "ERROR"
+        return $false
+    }
+
+    Write-Log "Assinatura digital OK: $Path | Assinante=$org" "INFO"
+    return $true
+}
+#endregion
+
 function Get-TrivorFileHeaderHex {
     param(
         [Parameter(Mandatory)] [string]$Path,
@@ -119,9 +167,11 @@ function Invoke-TrivorDownloadWithProgress {
     try {
         # Garante TLS moderno em Windows PowerShell 5.1
         try {
-            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls
+            # Somente TLS 1.2 (e 1.3 quando o .NET suportar); TLS 1.0/1.1 sao inseguros
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
         }
         catch {}
+        try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls13 } catch { Write-Verbose "TLS 1.3 indisponivel neste .NET; usando TLS 1.2." }
 
         for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
             try {
@@ -136,7 +186,7 @@ function Invoke-TrivorDownloadWithProgress {
                 $request.MaximumAutomaticRedirections = 10
                 $request.Timeout = 300000
                 $request.ReadWriteTimeout = 300000
-                $request.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) TrivorInstaller/3.4.4"
+                $request.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) TrivorInstaller/3.4.5"
                 $request.Accept = "*/*"
 
                 $response = $request.GetResponse()
@@ -356,6 +406,17 @@ $global:TrivorWingetDir         = Join-Path $env:SystemDrive "TrivorInstaller\Wi
 $global:TrivorWingetExe         = $null
 $global:TrivorWingetInitialized = $false
 
+function Initialize-TrivorWingetDir {
+    # Garante o diretorio de logs do winget com ACL restrita (herdada de C:\TrivorInstaller)
+    # e sem junction plantada no lugar.
+    if (Get-Command Protect-TrivorDirectory -ErrorAction SilentlyContinue) {
+        $null = Protect-TrivorDirectory -Path $global:TrivorWingetDir
+    }
+    elseif (-not (Test-Path $global:TrivorWingetDir)) {
+        New-Item -ItemType Directory -Force -Path $global:TrivorWingetDir | Out-Null
+    }
+}
+
 function Test-TrivorSystemContext {
     # Detecta contexto nao-interativo: SYSTEM literal, contas de servico NT, ou
     # ausencia de perfil de usuario (tipico de RMMs como N-able, Datto, Ninja, etc.)
@@ -447,9 +508,7 @@ function Initialize-Winget {
         Write-Log "Contexto de execucao: $currentUser" "INFO"
     } catch {}
 
-    if (-not (Test-Path $global:TrivorWingetDir)) {
-        New-Item -ItemType Directory -Force -Path $global:TrivorWingetDir | Out-Null
-    }
+    Initialize-TrivorWingetDir
 
     if (Test-TrivorSystemContext) {
         $loggedUser = Get-TrivorLoggedOnUser
@@ -529,15 +588,29 @@ function Invoke-WingetAsLoggedUserTask {
         return @{ Success = $false; ExitCode = -1; StdOut = $null; StdErr = $null }
     }
 
-    if (-not (Test-Path $global:TrivorWingetDir)) {
-        New-Item -ItemType Directory -Force -Path $global:TrivorWingetDir | Out-Null
-    }
+    Initialize-TrivorWingetDir
 
     $stamp = Get-Date -Format "yyyyMMdd_HHmmss"
     $safeName = ($OperationName -replace '[^a-zA-Z0-9\-_\.]', '_')
-    $stdout = Join-Path $global:TrivorWingetDir "${stamp}_${safeName}_stdout.log"
-    $stderr = Join-Path $global:TrivorWingetDir "${stamp}_${safeName}_stderr.log"
-    $runner = Join-Path $global:TrivorWingetDir "${stamp}_${safeName}_runner.ps1"
+
+    # Pasta por execucao: o Winget Dir e restrito a SYSTEM/Administradores, mas a task roda
+    # como o usuario logado (que pode ser usuario comum) e precisa ler o runner e gravar a
+    # saida. Somente o SID desse usuario recebe Modificar, e so nesta pasta.
+    $runDir = Join-Path $global:TrivorWingetDir ("{0}_{1}_{2}" -f $stamp, $safeName, [guid]::NewGuid().ToString('N').Substring(0, 8))
+    $userSid = Get-TrivorLoggedOnUserSID
+    if (-not $userSid) {
+        Write-Log "SID do usuario logado nao resolvido. A task pode falhar ao gravar a saida se o usuario nao for administrador." "WARN"
+    }
+    if (Get-Command Protect-TrivorDirectory -ErrorAction SilentlyContinue) {
+        $null = Protect-TrivorDirectory -Path $runDir -ModifySids @($userSid)
+    }
+    else {
+        New-Item -ItemType Directory -Force -Path $runDir | Out-Null
+    }
+
+    $stdout = Join-Path $runDir "stdout.log"
+    $stderr = Join-Path $runDir "stderr.log"
+    $runner = Join-Path $runDir "runner.ps1"
 
     $runnerContent = @"
 `$ErrorActionPreference = 'Continue'
@@ -777,7 +850,7 @@ function Install-Application {
         return (Install-WingetApp -WingetId $App.WingetId)
     }
 
-    $cacheRoot = if ($global:CachePath) { $global:CachePath } else { Join-Path $env:TEMP "TrivorInstaller\cache" }
+    $cacheRoot = if ($global:CachePath) { $global:CachePath } else { Join-Path $global:TrivorBasePath "cache" }
     New-Item -ItemType Directory -Force -Path $cacheRoot | Out-Null
 
     # 2) RepoExePublic
@@ -800,6 +873,12 @@ function Install-Application {
         }
 
         if (-not $ok) { return $false }
+
+        if (-not $needsHash -and -not (Test-TrivorInstallerSignature -Path $localFile -ExpectedSigner $App.Install.Signer)) {
+            Write-Log "Instalacao abortada (sem SHA256 e assinatura nao validada): $($App.Name)" "ERROR"
+            Remove-Item $localFile -Force -ErrorAction SilentlyContinue
+            return $false
+        }
 
         Write-Log "Executing installer: $localFile" "INFO"
         $installArgs = if ($App.Install.SilentArgs) { $App.Install.SilentArgs } else { "" }
@@ -845,6 +924,15 @@ function Install-Application {
             }
         }
 
+        if (-not $hasHash -and (Test-Path $localFile)) {
+            # Sem hash nao ha como confiar em arquivo pre-existente: sempre baixa de novo
+            Write-Log "Arquivo em cache sem SHA256 para $($App.Name). Descartando e baixando novamente." "WARN"
+            try { Remove-Item $localFile -Force -ErrorAction Stop } catch {
+                Write-Log "Nao foi possivel remover cache nao verificado: $localFile" "ERROR"
+                return $false
+            }
+        }
+
         if (-not (Test-Path $localFile)) {
             if ($hasHash) {
                 Write-Log "Downloading (UrlExe, with hash): $($App.Install.Url)" "INFO"
@@ -880,6 +968,12 @@ function Install-Application {
 
         if (-not (Test-Path $localFile)) {
             Write-Log "Installer nao encontrado apos download: $localFile" "ERROR"
+            return $false
+        }
+
+        if (-not $hasHash -and -not (Test-TrivorInstallerSignature -Path $localFile -ExpectedSigner $App.Install.Signer)) {
+            Write-Log "Instalacao abortada (sem SHA256 e assinatura nao validada): $($App.Name)" "ERROR"
+            Remove-Item $localFile -Force -ErrorAction SilentlyContinue
             return $false
         }
 
