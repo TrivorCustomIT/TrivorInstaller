@@ -402,7 +402,8 @@ function Test-InstallerExitCodeSuccess {
 
 #region Winget - contexto normal ou RMM/SYSTEM via usuario logado
 
-$global:TrivorWingetDir         = Join-Path $env:SystemDrive "TrivorInstaller\Winget"
+# Dentro da sessao (apagada ao final); a saida do winget tambem vai para o log principal.
+$global:TrivorWingetDir         = if ($global:TrivorBasePath) { Join-Path $global:TrivorBasePath "winget" } else { Join-Path $env:SystemDrive "TrivorInstaller\Winget" }
 $global:TrivorWingetExe         = $null
 $global:TrivorWingetInitialized = $false
 

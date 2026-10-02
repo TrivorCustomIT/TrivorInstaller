@@ -1,24 +1,40 @@
 $global:TrivorLogDir = Join-Path $env:SystemDrive "TrivorInstaller\Logs"
 $global:TrivorLogFile = $null
 $global:TrivorTranscriptFile = $null
+$global:TrivorLogRetentionDays = 90
+
+function Remove-TrivorOldLogs {
+    # Apaga logs com mais de $TrivorLogRetentionDays dias. Apenas arquivos .log reais
+    # diretamente na pasta (nunca links).
+    param([Parameter(Mandatory)] [string]$LogDir)
+
+    $limit = (Get-Date).AddDays(-$global:TrivorLogRetentionDays)
+    $old = @(Get-ChildItem -LiteralPath $LogDir -File -Filter "*.log" -Force -ErrorAction SilentlyContinue |
+        Where-Object { $_.LastWriteTime -lt $limit -and -not ($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint) })
+    foreach ($f in $old) {
+        Remove-Item -LiteralPath $f.FullName -Force -ErrorAction SilentlyContinue
+    }
+    if ($old.Count -gt 0) {
+        Write-Host ("Retencao de logs: {0} arquivo(s) com mais de {1} dias removido(s)." -f $old.Count, $global:TrivorLogRetentionDays) -ForegroundColor DarkGray
+    }
+}
 
 function Initialize-Logger {
     param(
         [string]$LogDir = $global:TrivorLogDir
     )
 
-    # C:\TrivorInstaller herda de C:\ permissao de escrita para usuarios comuns.
-    # Restringe a SYSTEM/Administradores (logs podem conter URLs de instaladores de clientes)
-    # e remove junctions plantadas antes de gravar como SYSTEM.
-    $rootDir = Split-Path $LogDir -Parent
-    if ((Get-Command Protect-TrivorDirectory -ErrorAction SilentlyContinue) -and $rootDir) {
-        $null = Protect-TrivorDirectory -Path $rootDir -ResetChildren
-        if (Test-Path -LiteralPath $LogDir) { $null = Protect-TrivorDirectory -Path $LogDir -ResetChildren }
+    # A raiz C:\TrivorInstaller e a pasta Logs ja foram protegidas pelo bootstrap
+    # (Initialize-TrivorRoot no Install.ps1) antes de qualquer download.
+    if (-not $global:TrivorRootReady -and (Get-Command Protect-TrivorDirectory -ErrorAction SilentlyContinue)) {
+        $null = Protect-TrivorDirectory -Path $LogDir -ResetChildren
     }
 
     if (-not (Test-Path $LogDir)) {
         New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
     }
+
+    Remove-TrivorOldLogs -LogDir $LogDir
 
     $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
 

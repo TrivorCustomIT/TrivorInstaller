@@ -11,16 +11,28 @@ Padrão de versão (a partir da v3.4.2): `vMAIOR.MENOR.BUG`, por exemplo `v3.4.4
 ### Corrigido (vulnerabilidades)
 
 - **Execução de código como SYSTEM via cache plantado.** Em contexto RMM/SYSTEM, a pasta de trabalho era `C:\Windows\Temp\TrivorInstaller`, com nome fixo, num local onde usuários comuns podem criar arquivos. Um usuário podia deixar ali, antes da execução, um instalador (ex.: `TakeControlAgent.exe`), um módulo `.ps1` ou um JSON de cliente, e o instalador executava ou carregava esse arquivo como SYSTEM.
-  - A pasta de trabalho agora tem nome aleatório (`TrivorInstaller_<GUID>`) e ACL restrita a SYSTEM e Administradores, aplicada antes de qualquer download.
-  - Cache, módulos e JSONs de clientes ficam dentro dessa pasta.
+  - O trabalho passa a ser feito em `C:\TrivorInstaller`, protegido (dono Administradores, sem herança, acesso só para SYSTEM e Administradores) antes de qualquer download. Se não for possível proteger a pasta, a execução é abortada.
+  - Cada execução usa a própria subpasta `Sessao_<data>_<id>`, com módulos, JSONs de clientes, cache e saída do winget.
 - **Exclusão arbitrária como SYSTEM via junction.** A limpeza fazia `Remove-Item -Recurse` no caminho fixo. Uma junction criada ali por um usuário comum levava o PowerShell 5.1 a apagar o conteúdo do destino. A remoção agora nunca segue links: junctions e symlinks são removidos sem tocar no destino.
 - **`C:\TrivorInstaller` gravável por usuários comuns.** A pasta herdava de `C:\` permissão de modificação para Usuários Autenticados, o que permitia alterar ou ler logs (que contêm URLs de instalação dos clientes) e plantar junctions nos caminhos em que o SYSTEM grava.
   - A pasta e todo o conteúdo existente passam a ter dono Administradores, sem herança, com acesso apenas para SYSTEM e Administradores.
   - Links encontrados dentro dela são removidos antes da aplicação da ACL.
-- **Winget via Scheduled Task:** cada execução usa uma subpasta própria em `C:\TrivorInstaller\Winget`. Somente o usuário logado (pelo SID) recebe permissão de Modificar, e apenas nessa subpasta.
+- **Winget via Scheduled Task:** cada chamada usa uma subpasta própria dentro de `Sessao_<data>_<id>\winget`. Somente o usuário logado (pelo SID) recebe permissão de Modificar, e apenas nessa subpasta.
 
 ### Adicionado
 
+- **Pasta de trabalho única em `C:\TrivorInstaller`:**
+
+  ```
+  C:\TrivorInstaller\
+    Logs\                        mantido
+    Sessao_<data>_<id>\          arquivos desta execução, apagados ao final
+  ```
+
+  - No início, são apagadas as sessões que sobraram de execuções interrompidas e a pasta `Winget` legada da v3.4.4.
+  - Execuções simultâneas (técnico + RMM) não interferem entre si: cada sessão fica bloqueada por um arquivo de lock exclusivo enquanto está ativa.
+  - Ao final, a execução apaga a própria sessão. Só os logs permanecem.
+- **Retenção de logs:** arquivos `.log` com mais de 90 dias são apagados automaticamente.
 - **Validação de assinatura digital (Authenticode) para instaladores sem SHA256** (`UrlExe` e `RepoExePublic`). O instalador só executa se a assinatura for válida.
   - Novo campo opcional `Install.Signer`: exige que o certificado seja da organização informada (campo O= do certificado).
   - Instalador sem hash nunca é reaproveitado do cache: é sempre baixado de novo e validado.

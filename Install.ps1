@@ -146,15 +146,79 @@ function Protect-TrivorDirectory {
 
 #endregion
 
-# Diretorio de trabalho com nome aleatorio e ACL restrita. Em contexto SYSTEM o TEMP e
-# C:\Windows\Temp, onde usuarios comuns podem criar arquivos: um nome fixo permitia
-# plantar instaladores/modulos ou uma junction antes da execucao.
-$global:TrivorBasePath = Join-Path $env:TEMP ("TrivorInstaller_" + [guid]::NewGuid().ToString('N'))
+#region Diretorio de trabalho (C:\TrivorInstaller)
+# Estrutura:
+#   C:\TrivorInstaller\Logs\                 mantido (retencao em Logger.ps1)
+#   C:\TrivorInstaller\Sessao_<data>_<id>\   core, Clientes, cache e winget desta execucao
+# A raiz e protegida (SYSTEM + Administradores) ANTES de qualquer download, e cada sessao
+# e apagada ao final. Uma sessao ativa e identificada por um lock exclusivo, para que
+# execucoes simultaneas (tecnico + RMM) nao apaguem os arquivos uma da outra.
+
+$global:TrivorRoot        = Join-Path $env:SystemDrive "TrivorInstaller"
+$global:TrivorLogsName    = "Logs"
+$global:TrivorSessionLock = $null
+$global:TrivorBasePath    = Join-Path $global:TrivorRoot ("Sessao_{0}_{1}" -f (Get-Date -Format "yyyyMMdd_HHmmss"), [guid]::NewGuid().ToString('N').Substring(0, 8))
+
+function Test-TrivorSessionActive {
+    # Sessao ativa = lock aberto por outro processo. Sem lock, considera ativa apenas se
+    # foi criada ha menos de 5 minutos (janela entre criar a pasta e abrir o lock).
+    param([Parameter(Mandatory)] [string]$Path)
+
+    $lockFile = Join-Path $Path "session.lock"
+    if (-not (Test-Path -LiteralPath $lockFile)) {
+        $dir = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+        return [bool]($dir -and $dir.CreationTime -gt (Get-Date).AddMinutes(-5))
+    }
+    try {
+        $fs = [System.IO.File]::Open($lockFile, 'Open', 'ReadWrite', 'None')
+        $fs.Dispose()
+        return $false
+    }
+    catch { return $true }
+}
+
+function Initialize-TrivorRoot {
+    # 1) Protege a raiz (remove junction no lugar dela e define dono/ACL)
+    if (-not (Protect-TrivorDirectory -Path $global:TrivorRoot)) {
+        throw "Nao foi possivel proteger $($global:TrivorRoot). Abortando por seguranca."
+    }
+
+    # 2) Remove links plantados em qualquer nivel, sem seguir o destino
+    $null = Remove-TrivorReparsePoints -Path $global:TrivorRoot
+
+    # 3) Apaga tudo que nao e Logs nem sessao ativa (sobras de execucoes interrompidas
+    #    e a pasta Winget legada da v3.4.4)
+    foreach ($child in @(Get-ChildItem -LiteralPath $global:TrivorRoot -Force -ErrorAction SilentlyContinue)) {
+        if ($child.Name -eq $global:TrivorLogsName) { continue }
+        if ($child.PSIsContainer -and $child.Name -like "Sessao_*" -and (Test-TrivorSessionActive -Path $child.FullName)) {
+            Write-Host "Sessao ativa de outra execucao mantida: $($child.Name)" -ForegroundColor DarkGray
+            continue
+        }
+        if ($child.PSIsContainer) { Remove-TrivorDirectorySafe -Path $child.FullName }
+        else { Remove-Item -LiteralPath $child.FullName -Force -ErrorAction SilentlyContinue }
+    }
+
+    # 4) Logs: ACL apenas herdada da raiz em todo o conteudo existente
+    $null = Protect-TrivorDirectory -Path (Join-Path $global:TrivorRoot $global:TrivorLogsName) -ResetChildren
+
+    # 5) Sessao desta execucao + lock exclusivo
+    New-Item -ItemType Directory -Force -Path $global:TrivorBasePath | Out-Null
+    $global:TrivorSessionLock = [System.IO.File]::Open((Join-Path $global:TrivorBasePath "session.lock"), 'Create', 'ReadWrite', 'None')
+    $global:TrivorRootReady = $true
+}
 
 function Invoke-Cleanup {
-    try { Remove-TrivorDirectorySafe -Path $global:TrivorBasePath }
+    # Apaga a sessao desta execucao; C:\TrivorInstaller\Logs e mantido.
+    try {
+        if ($global:TrivorSessionLock) { $global:TrivorSessionLock.Dispose(); $global:TrivorSessionLock = $null }
+        if ($global:TrivorBasePath -and (Test-Path -LiteralPath $global:TrivorBasePath)) {
+            Remove-TrivorDirectorySafe -Path $global:TrivorBasePath
+        }
+    }
     catch { Write-Host "[WARN] Falha na limpeza de $($global:TrivorBasePath): $($_.Exception.Message)" -ForegroundColor Yellow }
 }
+
+#endregion
 
 try {
     $global:TrivorExitCode      = 0
@@ -165,9 +229,7 @@ try {
     $CorePath    = Join-Path $BasePath "core"
     $ClientsPath = Join-Path $BasePath "Clientes"
 
-    if (-not (Protect-TrivorDirectory -Path $BasePath)) {
-        Write-Host "[WARN] Continuando com diretorio de trabalho sem ACL restrita: $BasePath" -ForegroundColor Yellow
-    }
+    Initialize-TrivorRoot
     New-Item -ItemType Directory -Force -Path $CorePath    | Out-Null
     New-Item -ItemType Directory -Force -Path $ClientsPath | Out-Null
 
