@@ -267,6 +267,7 @@ try {
         "Detection.ps1",
         "Engine.ps1",
         "Hostname.ps1",
+        "Guard.ps1",
         "Menu.ps1",
         "Gui.ps1"
     )
@@ -322,6 +323,7 @@ try {
     . "$CorePath\Detection.ps1"
     . "$CorePath\Engine.ps1"
     . "$CorePath\Hostname.ps1"
+    . "$CorePath\Guard.ps1"
     . "$CorePath\Menu.ps1"
     . "$CorePath\Gui.ps1"
 

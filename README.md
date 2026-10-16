@@ -39,6 +39,24 @@ Em um PowerShell aberto como Administrador:
 Os arquivos ficam em `C:\TrivorInstaller` (logs mantidos por 90 dias; os arquivos de cada execução
 são apagados ao final).
 
+O Trivor Installer é de uso **sob demanda** (terminal remoto ou na tela da máquina). **Não use como
+tarefa agendada do RMM**: sem ninguém respondendo, ele encerra em até 10 minutos sem executar nada
+(código de saída 1).
+
+
+Proteções contra erro do analista
+---------------------------------
+
+- O cliente da máquina é **sugerido** pelo prefixo do hostname (ex.: `FMC-8H2K93L` → FMCSV).
+- Se o cliente escolhido não bater com a máquina, é preciso **digitar o nome do cliente** para continuar.
+- Pós-Formatação em máquina que já parece configurada gera um aviso, com a sugestão de usar o Compliance.
+- Antes de executar, aparece um **resumo**: cliente, modo, aplicativos e hostname.
+
+Para identificar também clientes sem prefixo de hostname, informe no JSON do cliente:
+
+    "Domain": "empresa.local",
+    "EntraTenantId": "00000000-0000-0000-0000-000000000000"
+
 
 Histórico de versões
 --------------------

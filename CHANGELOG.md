@@ -35,6 +35,21 @@ Padrão de versão (a partir da v3.4.2): `vMAIOR.MENOR.BUG`, por exemplo `v3.4.4
 - **`$env:TRIVOR_BRANCH`:** permite testar uma branch antes do merge. O nome é validado contra injeção de comando, e a branch é repassada na reelevação via UAC.
 - O resumo do console também passa a avisar o reinício pendente após a renomeação do hostname feita pela interface.
 
+### Adicionado — proteções contra erro do analista (console e interface)
+
+O Trivor Installer é de uso **sob demanda**: pelo terminal remoto (menu de console) ou na tela da máquina (interface gráfica). Ele não deve ser usado como tarefa agendada do RMM.
+
+- **Cliente sugerido:**
+  - O instalador identifica o cliente da máquina pelo prefixo do hostname (ex.: `FMC-8H2K93L` → FMCSV) e o sugere: no console basta Enter; na interface aparece um botão "Abrir cliente detectado".
+  - Só sugere quando **um único** cliente corresponde. Nunca adivinha.
+  - Novos campos opcionais no JSON do cliente, `Domain` (domínio AD) e `EntraTenantId` (tenant do Entra ID), para identificar também clientes sem prefixo.
+- **Alerta de divergência:** se o cliente escolhido não bate com a máquina (ou se mais de um cliente bate), é preciso **digitar o nome do cliente** para continuar. A decisão fica registrada no log como WARN.
+- **Pós-Formatação em máquina já configurada:** com metade ou mais dos apps já instalados (mínimo 2), o instalador avisa e sugere o Compliance. Manter a Pós-Formatação fica registrado no log como WARN.
+- **Resumo antes de executar:** cliente, modo, aplicativos e hostname (atual → esperado). Nada é executado sem confirmação.
+- **Tempo-limite na primeira pergunta do console:** sem resposta em 10 minutos, ou com a entrada fechada (ninguém conectado), o script encerra **sem executar nada**, com código de saída 1. Evita que fique travado se for disparado sem terminal interativo.
+- **Índice dos clientes:** os JSONs dos clientes passam a ser baixados **em paralelo** no início (cerca de 1 s nos testes, com os 42 clientes) e reaproveitados ao abrir cada cliente.
+- **Novo módulo `core/Guard.ps1`.**
+
 ### Observações
 
 - O item "Relatórios" aparece no menu como "em breve" e será entregue na Sprint 3.

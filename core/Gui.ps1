@@ -347,6 +347,10 @@ try {
             Write-Log ("Interface grafica: {0} finalizado | {1} total / {2} falhas" -f $Payload.Mode, $Sync.Total, $Sync.Failed) "INFO"
         }
 
+        'index' {
+            $Sync.Match = Initialize-TrivorClientDetection -Names $Payload.Names -ClientsPath $Payload.ClientsPath
+        }
+
         'upgradelist' {
             [void](Initialize-Winget)
             $wingetArgs = 'upgrade --accept-source-agreements --disable-interactivity'
@@ -584,16 +588,24 @@ $script:TrivorGuiXaml = @'
         <!-- 1. Clientes -->
         <Grid x:Name="ViewClients">
           <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-          <DockPanel>
-            <StackPanel DockPanel.Dock="Right" Width="320" VerticalAlignment="Bottom">
-              <Label Content="Buscar cliente" Target="{Binding ElementName=SearchBox}" Padding="0,0,0,4" FontSize="12" Foreground="#5C5C5C"/>
-              <TextBox x:Name="SearchBox" Height="36" Padding="10,0" VerticalContentAlignment="Center" BorderBrush="#C4C4C4"/>
-            </StackPanel>
-            <StackPanel>
-              <TextBlock Style="{StaticResource H1}" Text="Selecione o cliente"/>
-              <TextBlock x:Name="ClientsCount" Style="{StaticResource Muted}" Margin="0,4,0,0"/>
-            </StackPanel>
-          </DockPanel>
+          <StackPanel>
+            <DockPanel>
+              <StackPanel DockPanel.Dock="Right" Width="320" VerticalAlignment="Bottom">
+                <Label Content="Buscar cliente" Target="{Binding ElementName=SearchBox}" Padding="0,0,0,4" FontSize="12" Foreground="#5C5C5C"/>
+                <TextBox x:Name="SearchBox" Height="36" Padding="10,0" VerticalContentAlignment="Center" BorderBrush="#C4C4C4"/>
+              </StackPanel>
+              <StackPanel>
+                <TextBlock Style="{StaticResource H1}" Text="Selecione o cliente"/>
+                <TextBlock x:Name="ClientsCount" Style="{StaticResource Muted}" Margin="0,4,0,0"/>
+              </StackPanel>
+            </DockPanel>
+            <Border x:Name="DetectedBanner" Margin="0,16,0,0" Padding="16,10" CornerRadius="6" BorderThickness="1" Background="#EAF2F8" BorderBrush="#C3D9EA">
+              <DockPanel>
+                <Button x:Name="BtnOpenDetected" DockPanel.Dock="Right" Style="{StaticResource AccentButton}" Content="Abrir cliente detectado" Visibility="Collapsed" Margin="16,0,0,0"/>
+                <TextBlock x:Name="DetectedText" Foreground="#123A57" FontSize="13" TextWrapping="Wrap" VerticalAlignment="Center" Text="Identificando o cliente desta máquina…"/>
+              </DockPanel>
+            </Border>
+          </StackPanel>
           <ScrollViewer Grid.Row="1" Margin="0,20,0,0" VerticalScrollBarVisibility="Auto">
             <ItemsControl x:Name="ClientsList">
               <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="4" VerticalAlignment="Top"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
@@ -930,6 +942,24 @@ $script:TrivorGuiXaml = @'
 </Window>
 '@
 
+$script:TrivorGuiConfirmXaml = @'
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Confirmação necessária" Width="560" SizeToContent="Height" ResizeMode="NoResize"
+        WindowStartupLocation="CenterOwner" ShowInTaskbar="False" FontFamily="Segoe UI" FontSize="14" Background="#FFFFFF">
+  <StackPanel Margin="24,20">
+    <TextBlock x:Name="ConfirmTitle" FontSize="17" FontWeight="SemiBold" Foreground="#7A4A00" TextWrapping="Wrap"/>
+    <TextBlock x:Name="ConfirmText" Margin="0,10,0,0" TextWrapping="Wrap" Foreground="#1B1B1B"/>
+    <Label x:Name="ConfirmLabel" Margin="0,16,0,0" Padding="0,0,0,4" Target="{Binding ElementName=ConfirmInput}"/>
+    <TextBox x:Name="ConfirmInput" Height="36" Padding="10,0" VerticalContentAlignment="Center"/>
+    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
+      <Button x:Name="ConfirmCancel" Content="Cancelar" IsCancel="True" MinWidth="110" Height="36" Padding="16,0"/>
+      <Button x:Name="ConfirmOk" Content="Continuar mesmo assim" IsEnabled="False" MinWidth="110" Height="36" Padding="16,0" Margin="8,0,0,0"/>
+    </StackPanel>
+  </StackPanel>
+</Window>
+'@
+
 #endregion
 
 #region Janela
@@ -956,6 +986,93 @@ function Show-TrivorGuiMessage {
     return ($r -eq [System.Windows.MessageBoxResult]::Yes -or $r -eq [System.Windows.MessageBoxResult]::OK)
 }
 
+function Show-TrivorGuiChoice {
+    # Sim / Nao / Cancelar. Retorna 'Yes', 'No' ou 'Cancel'.
+    param([string]$Text)
+    $r = [System.Windows.MessageBox]::Show($script:Gui.Window, $Text, 'Trivor Installer', [System.Windows.MessageBoxButton]::YesNoCancel, [System.Windows.MessageBoxImage]::Warning)
+    switch ($r) { 'Yes' { 'Yes' } 'No' { 'No' } default { 'Cancel' } }
+}
+
+function Show-TrivorGuiTypeConfirm {
+    # Confirmacao forte: o botao so habilita quando o analista digita exatamente o nome esperado.
+    param([string]$Title, [string]$Text, [Parameter(Mandatory)] [string]$Expected)
+
+    $xml = [xml]$script:TrivorGuiConfirmXaml
+    $dlg = [System.Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader $xml))
+    $dlg.Owner = $script:Gui.Window
+    $dlg.Icon = $script:Gui.Window.Icon
+    $c = @{}
+    foreach ($n in @('ConfirmTitle', 'ConfirmText', 'ConfirmLabel', 'ConfirmInput', 'ConfirmCancel', 'ConfirmOk')) { $c[$n] = $dlg.FindName($n) }
+    $c.ConfirmTitle.Text = $Title
+    $c.ConfirmText.Text = $Text
+    $c.ConfirmLabel.Content = "Para continuar, digite o nome do cliente: $Expected"
+    $script:TrivorGuiConfirmExpected = $Expected
+    $script:TrivorGuiConfirmCtl = $c
+    $c.ConfirmInput.Add_TextChanged({ $script:TrivorGuiConfirmCtl.ConfirmOk.IsEnabled = ($script:TrivorGuiConfirmCtl.ConfirmInput.Text.Trim() -eq $script:TrivorGuiConfirmExpected) })
+    $c.ConfirmOk.Add_Click({ $script:TrivorGuiConfirmDialog.DialogResult = $true })
+    $script:TrivorGuiConfirmDialog = $dlg
+    [void]$c.ConfirmInput.Focus()
+    return [bool]$dlg.ShowDialog()
+}
+
+function Format-TrivorGuiPlanText {
+    # Texto do resumo antes de executar (mesmo conteudo do console, com acentos).
+    param([Parameter(Mandatory)] $Plan)
+    $label = Get-TrivorGuiModeLabel $Plan.Mode
+    $hostText = switch ($Plan.HostAction) {
+        'Renomear'       { "$($Plan.CurrentHostname) → $($Plan.ExpectedHostname) (exige reiniciar)" }
+        'JaCorreto'      { "$($Plan.CurrentHostname) (já está correto)" }
+        'SemPrefixo'     { 'mantido (cliente sem prefixo)' }
+        'SerialInvalido' { 'mantido (serial inválido, ver log)' }
+        default          { 'mantido' }
+    }
+    $lines = @("Cliente: $($Plan.ClientName)", "Modo: $label")
+    if ($Plan.Mode -ne 'Hostname') { $lines += "Aplicativos ($($Plan.AppCount)): $($Plan.AppNames -join ', ')" }
+    $lines += "Hostname: $hostText"
+    return ($lines -join "`n")
+}
+
+function Confirm-TrivorGuiPlan {
+    param([Parameter(Mandatory)] [string]$Mode)
+    $plan = Get-TrivorRunPlan -Mode $Mode -ClientName $script:Gui.ClientName -Config $script:Gui.Config -ExpectedHostname $script:Gui.ExpectedHostname
+    return (Show-TrivorGuiMessage -Kind Question -YesNo -Text ("Confirmar a execução?`n`n" + (Format-TrivorGuiPlanText -Plan $plan)))
+}
+
+function Confirm-TrivorGuiClientChoice {
+    # Cliente escolhido x cliente detectado na maquina. Retorna $true para seguir.
+    param([Parameter(Mandatory)] [string]$Name)
+    $check = Test-TrivorClientChoice -Selected $Name -Match $script:Gui.Match
+    if ($check -eq 'Ok' -or $script:Gui.Confirmed[$Name]) { return $true }
+    $m = $script:Gui.Match
+    $what = if ($check -eq 'Mismatch') { "Esta máquina parece ser do cliente $($m.Client) ($($m.Reasons -join '; '))." } else { "Mais de um cliente corresponde a esta máquina: $($m.Clients -join ', ')." }
+    $text = "$what`n`nVocê escolheu $Name. Aplicar o cliente errado instala o agente RMM e renomeia o hostname para outro cliente."
+    if (Show-TrivorGuiTypeConfirm -Title 'O cliente escolhido não confere com esta máquina' -Text $text -Expected $Name) {
+        $script:Gui.Confirmed[$Name] = $true
+        Write-Log ("Analista confirmou cliente {0} apesar da deteccao ({1})." -f $Name, $check) "WARN"
+        return $true
+    }
+    Write-Log ("Cliente {0} nao confirmado pelo analista ({1}). Nada foi executado." -f $Name, $check) "INFO"
+    return $false
+}
+
+function Update-TrivorGuiDetectedBanner {
+    $ui = $script:Gui.Ui
+    $m = $script:Gui.Match
+    $ui.BtnOpenDetected.Visibility = 'Collapsed'
+    if (-not $m -or $m.Status -eq 'None') { $ui.DetectedBanner.Visibility = 'Collapsed'; return }
+    $ui.DetectedBanner.Visibility = 'Visible'
+    if ($m.Status -eq 'Single') {
+        $ui.DetectedBanner.Background = '#EAF2F8'; $ui.DetectedBanner.BorderBrush = '#C3D9EA'; $ui.DetectedText.Foreground = '#123A57'
+        $ui.DetectedText.Text = "Cliente detectado nesta máquina: $($m.Client) — $($m.Reasons -join '; ')."
+        $ui.BtnOpenDetected.Tag = $m.Client
+        $ui.BtnOpenDetected.Visibility = 'Visible'
+    }
+    else {
+        $ui.DetectedBanner.Background = '#FFF4DE'; $ui.DetectedBanner.BorderBrush = '#F0D9A8'; $ui.DetectedText.Foreground = '#5C3800'
+        $ui.DetectedText.Text = "Atenção: mais de um cliente corresponde a esta máquina ($($m.Clients -join ', ')). Confira antes de escolher."
+    }
+}
+
 function Invoke-TrivorGuiSafe {
     # Executa um handler de evento sem derrubar a janela em caso de erro.
     param([scriptblock]$Action)
@@ -978,7 +1095,7 @@ function Set-TrivorGuiBusy {
     param([bool]$Busy)
     $script:Gui.Busy = $Busy
     $ui = $script:Gui.Ui
-    foreach ($n in @('NavClients', 'NavUpgrade', 'NavLogs', 'NavAbout', 'BtnBack', 'BtnPostFormat', 'BtnCompliance', 'BtnUpdate', 'BtnUpgradeRefresh', 'BtnUpgradeRun', 'ClientsList', 'UpgradeUnknown')) {
+    foreach ($n in @('NavClients', 'NavUpgrade', 'NavLogs', 'NavAbout', 'BtnBack', 'BtnPostFormat', 'BtnCompliance', 'BtnUpdate', 'BtnUpgradeRefresh', 'BtnUpgradeRun', 'ClientsList', 'UpgradeUnknown', 'BtnOpenDetected')) {
         $ui[$n].IsEnabled = -not $Busy
     }
     if (-not $Busy) { Update-TrivorGuiClientButtons }
@@ -996,7 +1113,7 @@ function Get-TrivorGuiWorkerContext {
     }
     return @{
         CorePath = Join-Path $global:TrivorBasePath 'core'
-        Modules  = @('Logger.ps1', 'Detection.ps1', 'Engine.ps1', 'Hostname.ps1')
+        Modules  = @('Logger.ps1', 'Detection.ps1', 'Engine.ps1', 'Hostname.ps1', 'Guard.ps1')
         Globals  = $globals
     }
 }
@@ -1061,6 +1178,7 @@ function Update-TrivorGuiClientList {
 
 function Open-TrivorGuiClient {
     param([Parameter(Mandatory)] [string]$Name)
+    if (-not (Confirm-TrivorGuiClientChoice -Name $Name)) { return }
     $ui = $script:Gui.Ui
     $ui.Window.Cursor = [System.Windows.Input.Cursors]::Wait
     try { $cfg = Get-TrivorGuiClientConfig -ClientName $Name }
@@ -1085,6 +1203,7 @@ function Open-TrivorGuiClient {
     $ui.HostBadge.Background = $b.Bg
     $ui.HostBadgeText.Foreground = $b.Fg
 
+    $script:Gui.Detect = $null
     $script:Gui.Rows = @($apps | ForEach-Object { New-TrivorGuiAppRow -App $_ -State $null })
     $ui.AppsGrid.ItemsSource = $script:Gui.Rows
     $ui.AppsSummary.Text = 'Verificando o que está instalado…'
@@ -1096,6 +1215,7 @@ function Open-TrivorGuiClient {
         $ui = $script:Gui.Ui
         if ($sync.Error) { $ui.AppsSummary.Text = "Falha na verificação: $($sync.Error)"; return }
         $det = @($sync.Detect)
+        $script:Gui.Detect = $det
         $apps = @($script:Gui.Config.Applications)
         $rows = for ($i = 0; $i -lt $apps.Count; $i++) { New-TrivorGuiAppRow -App $apps[$i] -State $(if ($i -lt $det.Count) { $det[$i] } else { $null }) }
         $script:Gui.Rows = @($rows)
@@ -1350,6 +1470,7 @@ function Start-TrivorGui {
         Window = $window; Ui = $ui; Busy = $false; Job = $null; View = 'ViewClients'
         Clients = @(Get-ClientList); ClientName = $null; Config = $null; Rows = @(); ExpectedHostname = $null
         Run = $null; LogOffset = 0; UpgradeRows = @(); LogViewerPath = $null; LogViewerLines = @()
+        Match = $null; Confirmed = @{}; Detect = $null
         Timer = New-Object System.Windows.Threading.DispatcherTimer
     }
     $script:Gui.Timer.Interval = [TimeSpan]::FromMilliseconds(400)
@@ -1384,6 +1505,17 @@ function Start-TrivorGui {
         if ($name) { Invoke-TrivorGuiSafe { Open-TrivorGuiClient -Name $name } }
     })
     $ui.BtnBack.Add_Click({ Invoke-TrivorGuiSafe { Show-TrivorGuiView 'ViewClients' } })
+    $ui.BtnOpenDetected.Add_Click({ Invoke-TrivorGuiSafe { Open-TrivorGuiClient -Name ([string]$script:Gui.Ui.BtnOpenDetected.Tag) } })
+
+    # Deteccao do cliente da maquina, em segundo plano, assim que a janela aparece
+    $window.Add_ContentRendered({ Invoke-TrivorGuiSafe {
+        Start-TrivorGuiJob -Kind 'index' -Payload @{ Names = @($script:Gui.Clients); ClientsPath = (Get-ClientsPath) } -OnDone {
+            param($sync)
+            $script:Gui.Match = $sync.Match
+            $global:TrivorClientMatch = $sync.Match
+            Update-TrivorGuiDetectedBanner
+        }
+    } })
 
     # Selecao de apps (o CheckBox atualiza o objeto da linha)
     $ui.AppsGrid.AddHandler([System.Windows.Controls.Primitives.ToggleButton]::ClickEvent, [System.Windows.RoutedEventHandler]{
@@ -1400,23 +1532,33 @@ function Start-TrivorGui {
     # Acoes do cliente
     $ui.BtnPostFormat.Add_Click({ Invoke-TrivorGuiSafe {
         $cfg = $script:Gui.Config
-        if (Show-TrivorGuiMessage -Kind Question -YesNo -Text "Executar Pós-Formatação para $($script:Gui.ClientName)?`n`nRenomeia o hostname (se houver prefixo) e instala os $(@($cfg.Applications).Count) aplicativos por prioridade, sem verificar o que já existe.") {
-            Start-TrivorGuiRun -Mode 'PostFormat' -Steps (New-TrivorGuiSteps -Mode 'PostFormat' -Config $cfg)
+        $mode = 'PostFormat'
+        if ($script:Gui.Detect) {
+            $a = Get-TrivorPostFormatAssessment -States $script:Gui.Detect
+            if ($a.LooksConfigured) {
+                $choice = Show-TrivorGuiChoice -Text ("Esta máquina não parece recém-formatada: $($a.Installed) de $($a.Total) aplicativos já estão instalados.`n`n" +
+                    "A Pós-Formatação reinstala tudo sem verificar. O Compliance instala só o que falta e atualiza o resto.`n`n" +
+                    "Sim = executar Compliance (recomendado)`nNão = executar Pós-Formatação mesmo assim`nCancelar = não executar nada")
+                if ($choice -eq 'Cancel') { return }
+                if ($choice -eq 'Yes') { $mode = 'Compliance'; Write-Log "Pos-Formatacao trocada por Compliance (maquina ja configurada)." "INFO" }
+                else { Write-Log ("Pos-Formatacao mantida pelo analista em maquina com {0}/{1} apps instalados." -f $a.Installed, $a.Total) "WARN" }
+            }
         }
+        if (Confirm-TrivorGuiPlan -Mode $mode) { Start-TrivorGuiRun -Mode $mode -Steps (New-TrivorGuiSteps -Mode $mode -Config $cfg) }
     } })
     $ui.BtnCompliance.Add_Click({ Invoke-TrivorGuiSafe {
-        $cfg = $script:Gui.Config
-        if (Show-TrivorGuiMessage -Kind Question -YesNo -Text "Executar Compliance para $($script:Gui.ClientName)?`n`nVerifica o hostname, instala o que falta e atualiza o que tem winget.") {
-            Start-TrivorGuiRun -Mode 'Compliance' -Steps (New-TrivorGuiSteps -Mode 'Compliance' -Config $cfg)
-        }
+        if (Confirm-TrivorGuiPlan -Mode 'Compliance') { Start-TrivorGuiRun -Mode 'Compliance' -Steps (New-TrivorGuiSteps -Mode 'Compliance' -Config $script:Gui.Config) }
     } })
     $ui.BtnSelected.Add_Click({ Invoke-TrivorGuiSafe {
         $apps = @($script:Gui.Rows | Where-Object { $_.Selected } | ForEach-Object { $_.App })
-        Start-TrivorGuiRun -Mode 'Selected' -Steps (New-TrivorGuiSteps -Mode 'Selected' -Config $script:Gui.Config -SelectedApps $apps)
+        $text = "Confirmar a execução?`n`nCliente: $($script:Gui.ClientName)`nModo: Instalação dos selecionados (instala o que falta e atualiza o resto)`nAplicativos ($($apps.Count)): $(($apps | ForEach-Object { $_.Name }) -join ', ')`nHostname: mantido"
+        if (Show-TrivorGuiMessage -Kind Question -YesNo -Text $text) {
+            Start-TrivorGuiRun -Mode 'Selected' -Steps (New-TrivorGuiSteps -Mode 'Selected' -Config $script:Gui.Config -SelectedApps $apps)
+        }
     } })
-    $ui.BtnUpdate.Add_Click({ Invoke-TrivorGuiSafe { Start-TrivorGuiRun -Mode 'Update' -Steps (New-TrivorGuiSteps -Mode 'Update' -Config $script:Gui.Config) } })
+    $ui.BtnUpdate.Add_Click({ Invoke-TrivorGuiSafe { if (Confirm-TrivorGuiPlan -Mode 'Update') { Start-TrivorGuiRun -Mode 'Update' -Steps (New-TrivorGuiSteps -Mode 'Update' -Config $script:Gui.Config) } } })
     $ui.BtnHostname.Add_Click({ Invoke-TrivorGuiSafe {
-        if (Show-TrivorGuiMessage -Kind Question -YesNo -Text "Renomear esta máquina para $($script:Gui.ExpectedHostname)?`n`nA alteração só vale após reiniciar.") {
+        if (Confirm-TrivorGuiPlan -Mode 'Hostname') {
             Start-TrivorGuiRun -Mode 'Hostname' -Steps (New-TrivorGuiSteps -Mode 'Hostname' -Config $script:Gui.Config)
         }
     } })
