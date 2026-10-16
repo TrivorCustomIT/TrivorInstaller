@@ -1,5 +1,18 @@
 Write-Host "Trivor Installer iniciado"
 
+# Branch de origem dos modulos e clientes. Padrao: main (producao).
+# Para testar uma branch antes do merge: $env:TRIVOR_BRANCH = '<branch>' (validado abaixo).
+$TrivorBranchName = "main"
+if (-not [string]::IsNullOrWhiteSpace($env:TRIVOR_BRANCH)) {
+    if ($env:TRIVOR_BRANCH -match '^[A-Za-z0-9._/-]{1,100}$' -and $env:TRIVOR_BRANCH -notmatch '\.\.') {
+        $TrivorBranchName = $env:TRIVOR_BRANCH
+        Write-Host "ATENCAO: usando a branch de teste '$TrivorBranchName' (nao e producao)." -ForegroundColor Yellow
+    }
+    else {
+        Write-Host "TRIVOR_BRANCH invalida ignorada. Usando main." -ForegroundColor Yellow
+    }
+}
+
 # --- Auto-elevacao compativel com irm | iex ---
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
@@ -23,9 +36,17 @@ if (-not $isAdmin) {
     } else {
         Write-Host "Elevando privilegios..."
         $tempScript = Join-Path $env:TEMP "TrivorLauncher.ps1"
-        $url = "https://raw.githubusercontent.com/TrivorCustomIT/TrivorInstaller/main/Install.ps1"
+        $url = "https://raw.githubusercontent.com/TrivorCustomIT/TrivorInstaller/$TrivorBranchName/Install.ps1"
         Invoke-WebRequest -Uri $url -OutFile $tempScript -UseBasicParsing
-        Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$tempScript`"" -Verb RunAs
+        if ($TrivorBranchName -eq "main") {
+            Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$tempScript`"" -Verb RunAs
+        }
+        else {
+            # O processo elevado nao herda variaveis de ambiente de forma confiavel: repassa a branch
+            # (ja validada pela regex acima, sem aspas nem separadores de comando)
+            $tempScriptQuoted = $tempScript.Replace("'", "''")   # perfil com apostrofo (ex.: O'Brien)
+            Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"`$env:TRIVOR_BRANCH='$TrivorBranchName'; & '$tempScriptQuoted'`"" -Verb RunAs
+        }
         exit
     }
 }
@@ -235,7 +256,7 @@ try {
 
     $Owner  = "TrivorCustomIT"
     $Repo   = "TrivorInstaller"
-    $Branch = "main"
+    $Branch = $TrivorBranchName
 
     $CoreBaseRaw = "https://raw.githubusercontent.com/$Owner/$Repo/$Branch/core"
 
@@ -246,7 +267,8 @@ try {
         "Detection.ps1",
         "Engine.ps1",
         "Hostname.ps1",
-        "Menu.ps1"
+        "Menu.ps1",
+        "Gui.ps1"
     )
 
     foreach ($Module in $Modules) {
@@ -301,6 +323,7 @@ try {
     . "$CorePath\Engine.ps1"
     . "$CorePath\Hostname.ps1"
     . "$CorePath\Menu.ps1"
+    . "$CorePath\Gui.ps1"
 
     $global:TrivorVersion = Get-InstallerVersion
 
@@ -310,7 +333,23 @@ try {
 
     Initialize-Cache
     Show-Banner
-    Start-MainMenu
+
+    # Interface grafica quando ha desktop interativo; console em SYSTEM/RMM ou se o WPF falhar.
+    # Forcar o console: $env:TRIVOR_UI = 'console'
+    $gui = Test-TrivorGuiAvailable
+    if ($gui.Available) {
+        try {
+            Start-TrivorGui
+        }
+        catch {
+            Write-Log "Falha na interface grafica: $($_.Exception.Message). Usando o menu de console." "WARN"
+            Start-MainMenu
+        }
+    }
+    else {
+        Write-Log "Interface grafica indisponivel ($($gui.Reason)). Usando o menu de console." "INFO"
+        Start-MainMenu
+    }
 }
 catch {
     if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
@@ -357,5 +396,11 @@ finally {
     }
 
     Invoke-Cleanup
+
+    if ($global:TrivorRebootOnExit) {
+        # Pedido na interface grafica ("Reiniciar ao fechar"), depois da limpeza da sessao
+        Write-Host "Reiniciando a maquina..." -ForegroundColor Yellow
+        Restart-Computer -Force
+    }
     exit $global:TrivorExitCode
 }

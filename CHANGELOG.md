@@ -6,6 +6,46 @@ Padrão de versão (a partir da v3.4.2): `vMAIOR.MENOR.BUG`, por exemplo `v3.4.4
 
 ---
 
+## v3.5.0 — Interface gráfica (WPF)
+
+### Adicionado
+
+- **Interface gráfica em WPF** (`core/Gui.ps1`), aberta automaticamente quando há um técnico logado na máquina. Telas:
+  - **Clientes:** cards com busca por nome.
+  - **Painel do cliente:**
+    - hostname atual × esperado;
+    - os modos Pós-Formatação, Compliance, Atualizar apps e Renomear hostname;
+    - tabela de apps com origem do instalador (winget, repositório com SHA256, URL com assinatura) e status (Instalado, Faltando, Versão antiga);
+    - **Instalar selecionados:** checkboxes que substituem o modo manual do console.
+  - **Execução:** progresso geral, etapas e log ao vivo. "Cancelar após o app atual" nunca interrompe um instalador no meio.
+  - **Resumo:** sucesso, falhas, código de saída da sessão (RMM), duração, resultado por etapa e aviso de reinício pendente, com a opção "Reiniciar ao fechar".
+  - **Upgrade geral:** lista os apps da máquina com atualização no winget, para escolher o que atualizar. Se a saída do winget vier em formato desconhecido, ela é exibida como texto, sem leitura arriscada.
+  - **Logs:** arquivos de `C:\TrivorInstaller\Logs` com filtro por nível (INFO, WARN, ERROR) e busca.
+  - **Sobre:** versão, canal, ambiente, pastas e retenção.
+- **Funcionamento:**
+  - Identidade visual da Trivor: logo, azul `#3568B1` e fonte Segoe UI.
+  - As ações rodam em segundo plano, então a janela não congela durante as instalações.
+  - Não é possível fechar a janela no meio de uma execução.
+  - A interface usa as mesmas funções de instalação e detecção do console. A lógica do motor não mudou.
+- **Console como fallback:** o menu de console continua igual e é usado automaticamente:
+  - em contexto SYSTEM/RMM (sem desktop);
+  - quando o WPF não está disponível;
+  - se a janela falhar ao abrir (o motivo vai para o log);
+  - ou quando forçado com `$env:TRIVOR_UI = 'console'`.
+- **`$env:TRIVOR_BRANCH`:** permite testar uma branch antes do merge. O nome é validado contra injeção de comando, e a branch é repassada na reelevação via UAC.
+- O resumo do console também passa a avisar o reinício pendente após a renomeação do hostname feita pela interface.
+
+### Observações
+
+- O item "Relatórios" aparece no menu como "em breve" e será entregue na Sprint 3.
+- `Gui.ps1` é salvo em UTF-8 com BOM, para os acentos aparecerem corretamente no Windows PowerShell 5.1. Os demais módulos continuam em ASCII.
+
+### Alterado
+
+- User-Agent e versão de fallback atualizados para 3.5.0.
+
+---
+
 ## v3.4.5 — Sprint 2: segurança
 
 ### Corrigido (vulnerabilidades)

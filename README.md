@@ -21,6 +21,25 @@ e a gestão do parque tecnológico.
 ====================================================
 
 
+Como executar
+-------------
+
+Em um PowerShell aberto como Administrador:
+
+    irm https://raw.githubusercontent.com/TrivorCustomIT/TrivorInstaller/main/Install.ps1 | iex
+
+- Com um técnico logado na máquina, abre a **interface gráfica** (WPF).
+- Em contexto SYSTEM/RMM, ou se o WPF não estiver disponível, usa o **menu de console**.
+- Para forçar o console: `$env:TRIVOR_UI = 'console'` antes do comando.
+- Para testar uma branch antes do merge (nunca em produção):
+
+      $env:TRIVOR_BRANCH = 'nome-da-branch'
+      irm https://raw.githubusercontent.com/TrivorCustomIT/TrivorInstaller/nome-da-branch/Install.ps1 | iex
+
+Os arquivos ficam em `C:\TrivorInstaller` (logs mantidos por 90 dias; os arquivos de cada execução
+são apagados ao final).
+
+
 Histórico de versões
 --------------------
 
