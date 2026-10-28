@@ -152,7 +152,8 @@ function Invoke-TrivorDownloadWithProgress {
         [Parameter(Mandatory)] [string]$Url,
         [Parameter(Mandatory)] [string]$OutFile,
         [int]$MaxAttempts = 3,
-        [switch]$ValidateExe
+        [switch]$ValidateExe,
+        [switch]$ValidateMsi
     )
 
     Write-Log "Iniciando download: $Url" "INFO"
@@ -280,6 +281,13 @@ function Invoke-TrivorDownloadWithProgress {
                     }
                 }
 
+                if ($ValidateMsi) {
+                    # MSI e um arquivo OLE Compound Document: cabecalho D0 CF 11 E0
+                    if (-not $signature -or $signature -ne "D0CF11E0") {
+                        throw "Arquivo baixado nao parece MSI valido. Assinatura=$signature"
+                    }
+                }
+
                 Move-Item -Path $partialFile -Destination $OutFile -Force
 
                 $finalInfo = Get-Item $OutFile -ErrorAction Stop
@@ -319,6 +327,32 @@ $global:TrivorInstallerSuccessCodes = @(0, 3010, 1641)
 $global:TrivorInstallerRebootCodes  = @(3010, 1641)
 
 $global:TrivorRebootRequired = $false
+
+# Falhas passageiras: repetidas uma vez apos uma pausa (arquivo em uso, outra instalacao em andamento)
+$global:TrivorWingetCodeHashMismatch = [int32]-1978335215  # 0x8A150011 - hash do instalador diferente do manifesto
+$global:TrivorTransientExitCodes = @(
+    [int32]-2147024864,  # 0x80070020 - arquivo em uso por outro processo
+    [int32]-2147023278,  # 0x80070652 - outra instalacao em andamento (HRESULT de 1618)
+    1618,                # ERROR_INSTALL_ALREADY_RUNNING (MSI/EXE)
+    [int32]-1978334974,  # 0x8A150102 - winget: outra instalacao em andamento
+    [int32]-1978334973   # 0x8A150103 - winget: arquivo em uso
+)
+$global:TrivorTransientMaxRetries        = 1
+$global:TrivorTransientRetryDelaySeconds = 30
+$global:TrivorLastWingetExitCode         = $null
+
+function Test-TrivorTransientExitCode {
+    param($ExitCode)
+    if ($null -eq $ExitCode) { return $false }
+    return ($global:TrivorTransientExitCodes -contains (ConvertTo-TrivorInt32 $ExitCode))
+}
+
+function Wait-TrivorTransientRetry {
+    # Registra a falha passageira e aguarda antes da nova tentativa.
+    param([string]$Target, $ExitCode)
+    Write-Log ("Falha passageira: {0} | ExitCode={1}. Nova tentativa em {2} s." -f $Target, $ExitCode, $global:TrivorTransientRetryDelaySeconds) "WARN"
+    Start-Sleep -Seconds $global:TrivorTransientRetryDelaySeconds
+}
 
 function ConvertTo-TrivorInt32 {
     # Converte exit codes vindos como UInt32 (ex: LastTaskResult da Scheduled Task)
@@ -748,24 +782,43 @@ function Write-WingetResult {
     }
 }
 
+function Invoke-TrivorWingetPackageOperation {
+    # Executa install/upgrade de um pacote e repete uma vez em falha passageira.
+    # O ultimo exit code fica em $global:TrivorLastWingetExitCode (usado pelo instalador reserva).
+    param(
+        [Parameter(Mandatory)] [string]$WingetId,
+        [Parameter(Mandatory)] [ValidateSet("install", "upgrade")] [string]$Operation,
+        [Parameter(Mandatory)] [string]$Arguments,
+        [Parameter(Mandatory)] [string]$Action
+    )
+
+    for ($attempt = 0; ; $attempt++) {
+        $result = Invoke-WingetAsUser -Arguments $Arguments -OperationName "${Operation}_$WingetId"
+        $result.Success = Test-WingetExitCodeSuccess -ExitCode $result.ExitCode -Operation $Operation
+        Write-WingetResult -Action $Action -Target $WingetId -Result $result
+
+        if ($result.Success -or $attempt -ge $global:TrivorTransientMaxRetries -or -not (Test-TrivorTransientExitCode $result.ExitCode)) { break }
+        Wait-TrivorTransientRetry -Target $WingetId -ExitCode $result.ExitCode
+    }
+
+    $global:TrivorLastWingetExitCode = ConvertTo-TrivorInt32 $result.ExitCode
+    return $result.Success
+}
+
 function Install-WingetApp {
     param([Parameter(Mandatory)] [string]$WingetId)
 
     Write-Log "Installing via Winget: $WingetId" "INFO"
-    $result = Invoke-WingetAsUser -Arguments "install --id `"$WingetId`" --exact --source winget --silent --accept-package-agreements --accept-source-agreements --disable-interactivity" -OperationName "install_$WingetId"
-    $result.Success = Test-WingetExitCodeSuccess -ExitCode $result.ExitCode -Operation "install"
-    Write-WingetResult -Action "WingetInstall" -Target $WingetId -Result $result
-    return $result.Success
+    return (Invoke-TrivorWingetPackageOperation -WingetId $WingetId -Operation "install" -Action "WingetInstall" `
+        -Arguments "install --id `"$WingetId`" --exact --source winget --silent --accept-package-agreements --accept-source-agreements --disable-interactivity")
 }
 
 function Update-WingetApp {
     param([Parameter(Mandatory)] [string]$WingetId)
 
     Write-Log "Updating via Winget: $WingetId" "INFO"
-    $result = Invoke-WingetAsUser -Arguments "upgrade --id `"$WingetId`" --exact --source winget --silent --include-unknown --accept-package-agreements --accept-source-agreements --disable-interactivity" -OperationName "upgrade_$WingetId"
-    $result.Success = Test-WingetExitCodeSuccess -ExitCode $result.ExitCode -Operation "upgrade"
-    Write-WingetResult -Action "WingetUpgrade" -Target $WingetId -Result $result
-    return $result.Success
+    return (Invoke-TrivorWingetPackageOperation -WingetId $WingetId -Operation "upgrade" -Action "WingetUpgrade" `
+        -Arguments "upgrade --id `"$WingetId`" --exact --source winget --silent --include-unknown --accept-package-agreements --accept-source-agreements --disable-interactivity")
 }
 
 function Upgrade-WingetAll {
@@ -843,12 +896,48 @@ function Invoke-WingetUpgradeAllWithDisplay {
 #endregion
 
 #region Install router
+function Invoke-TrivorInstallerProcess {
+    # Executa o instalador e valida o exit code; repete uma vez em falha passageira (ex: 1618).
+    param(
+        [Parameter(Mandatory)] $App,
+        [Parameter(Mandatory)] [string]$FilePath,
+        [string]$Arguments = ""
+    )
+
+    for ($attempt = 0; ; $attempt++) {
+        try {
+            if ([string]::IsNullOrWhiteSpace($Arguments)) {
+                $p = Start-Process -FilePath $FilePath -Wait -NoNewWindow -PassThru
+            } else {
+                $p = Start-Process -FilePath $FilePath -ArgumentList $Arguments -Wait -NoNewWindow -PassThru
+            }
+        }
+        catch {
+            Write-Log "Falha ao executar installer: $FilePath | $($_.Exception.Message)" "ERROR"
+            return $false
+        }
+
+        Write-Log "Installer finished: $($App.Name) | ExitCode=$($p.ExitCode)" "INFO"
+        if (Test-InstallerExitCodeSuccess -App $App -ExitCode $p.ExitCode) { return $true }
+        if ($attempt -ge $global:TrivorTransientMaxRetries -or -not (Test-TrivorTransientExitCode $p.ExitCode)) { return $false }
+        Wait-TrivorTransientRetry -Target $App.Name -ExitCode $p.ExitCode
+    }
+}
+
 function Install-Application {
     param([Parameter(Mandatory)] $App)
 
-    # 1) Winget
+    # 1) Winget (com instalador reserva opcional em "Fallback" quando o hash do winget nao confere)
     if ($App.PSObject.Properties.Match("WingetId").Count -gt 0 -and $App.WingetId) {
-        return (Install-WingetApp -WingetId $App.WingetId)
+        if (Install-WingetApp -WingetId $App.WingetId) { return $true }
+
+        $hasFallback = ($App.PSObject.Properties.Match("Fallback").Count -gt 0 -and $App.Fallback)
+        if ($hasFallback -and $global:TrivorLastWingetExitCode -eq $global:TrivorWingetCodeHashMismatch) {
+            Write-Log "Hash do winget nao confere para $($App.Name). Usando instalador reserva ($($App.Fallback.Method))." "WARN"
+            $fallbackApp = [pscustomobject]@{ Id = $App.Id; Name = $App.Name; Install = $App.Fallback }
+            return (Install-Application -App $fallbackApp)
+        }
+        return $false
     }
 
     $cacheRoot = if ($global:CachePath) { $global:CachePath } else { Join-Path $global:TrivorBasePath "cache" }
@@ -884,15 +973,7 @@ function Install-Application {
         Write-Log "Executing installer: $localFile" "INFO"
         $installArgs = if ($App.Install.SilentArgs) { $App.Install.SilentArgs } else { "" }
 
-        $installOk = $false
-        try {
-            $p = Start-Process -FilePath $localFile -ArgumentList $installArgs -Wait -NoNewWindow -PassThru
-            Write-Log "Installer finished: $($App.Name) | ExitCode=$($p.ExitCode)" "INFO"
-            $installOk = Test-InstallerExitCodeSuccess -App $App -ExitCode $p.ExitCode
-        }
-        catch {
-            Write-Log "Falha ao executar installer: $localFile | $($_.Exception.Message)" "ERROR"
-        }
+        $installOk = Invoke-TrivorInstallerProcess -App $App -FilePath $localFile -Arguments $installArgs
 
         if ($App.Install.CleanAfterInstall -eq $true) {
             try { Remove-Item $localFile -Force -ErrorAction SilentlyContinue } catch {}
@@ -987,16 +1068,7 @@ function Install-Application {
         Write-Log "Executing installer: $localFile" "INFO"
         $installArgs = if ($App.Install.SilentArgs) { $App.Install.SilentArgs } else { "" }
 
-        $installOk = $false
-        try {
-            $p = Start-Process -FilePath $localFile -ArgumentList $installArgs -Wait -NoNewWindow -PassThru
-            Write-Log "Installer finished: $($App.Name) | ExitCode=$($p.ExitCode)" "INFO"
-            $installOk = Test-InstallerExitCodeSuccess -App $App -ExitCode $p.ExitCode
-        }
-        catch {
-            Write-Log "Falha ao executar installer: $localFile | $($_.Exception.Message)" "ERROR"
-            return $false
-        }
+        $installOk = Invoke-TrivorInstallerProcess -App $App -FilePath $localFile -Arguments $installArgs
 
         if ($App.Install.CleanAfterInstall -eq $true) {
             try { Remove-Item $localFile -Force -ErrorAction SilentlyContinue } catch {}
@@ -1005,8 +1077,45 @@ function Install-Application {
         return $installOk
     }
 
+    # 4) UrlMsi - MSI de URL oficial; sem SHA256, exige assinatura digital valida e Install.Signer
+    if ($App.PSObject.Properties.Match("Install").Count -gt 0 -and $App.Install -and $App.Install.Method -eq "UrlMsi") {
 
-    # 4) RegFile
+        if ([string]::IsNullOrWhiteSpace($App.Install.Signer)) {
+            Write-Log "UrlMsi exige Install.Signer no JSON: $($App.Name)" "ERROR"
+            return $false
+        }
+
+        $cacheFileName = if ($App.Install.CacheFileName) { $App.Install.CacheFileName } else { [System.IO.Path]::GetFileName($App.Install.Url) }
+        if ([string]::IsNullOrWhiteSpace($cacheFileName) -or $cacheFileName -notmatch '\.msi$') {
+            $cacheFileName = "$($App.Id).msi"
+        }
+        $localFile = Join-Path $cacheRoot $cacheFileName
+
+        Write-Log "Downloading (UrlMsi): $($App.Install.Url)" "INFO"
+        if (-not (Invoke-TrivorDownloadWithProgress -Url $App.Install.Url -OutFile $localFile -MaxAttempts 3 -ValidateMsi)) {
+            Write-Log "Download failed: $($App.Install.Url)" "ERROR"
+            return $false
+        }
+
+        if (-not (Test-TrivorInstallerSignature -Path $localFile -ExpectedSigner $App.Install.Signer)) {
+            Write-Log "Instalacao abortada (assinatura nao validada): $($App.Name)" "ERROR"
+            Remove-Item $localFile -Force -ErrorAction SilentlyContinue
+            return $false
+        }
+
+        $msiArgs = if ($App.Install.SilentArgs) { $App.Install.SilentArgs } else { "/qn /norestart" }
+        Write-Log "Executing MSI: $localFile" "INFO"
+        $msiexec = Join-Path $env:SystemRoot "System32\msiexec.exe"
+        $installOk = Invoke-TrivorInstallerProcess -App $App -FilePath $msiexec -Arguments "/i `"$localFile`" $msiArgs"
+
+        if ($App.Install.CleanAfterInstall -eq $true) {
+            try { Remove-Item $localFile -Force -ErrorAction SilentlyContinue } catch {}
+            Write-Log "Cache cleaned: $localFile" "INFO"
+        }
+        return $installOk
+    }
+
+    # 5) RegFile
     if ($App.PSObject.Properties.Match("Install").Count -gt 0 -and $App.Install -and $App.Install.Method -eq "RegFile") {
 
         $cacheFileName = if ($App.Install.CacheFileName) { $App.Install.CacheFileName } else { [System.IO.Path]::GetFileName($App.Install.RelativePath) }

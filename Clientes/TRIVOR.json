@@ -23,7 +23,15 @@
     {
       "Id": "chrome",
       "Name": "Google Chrome",
-      "WingetId": "Google.Chrome"
+      "WingetId": "Google.Chrome",
+      "Fallback": {
+        "Method": "UrlMsi",
+        "Url": "https://dl.google.com/dl/chrome/install/googlechromestandaloneenterprise64.msi",
+        "Signer": "Google LLC",
+        "CacheFileName": "googlechromestandaloneenterprise64.msi",
+        "SilentArgs": "/qn /norestart",
+        "CleanAfterInstall": true
+      }
     },
     {
       "Id": "rmm-agent",

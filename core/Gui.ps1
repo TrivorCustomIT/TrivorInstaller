@@ -107,7 +107,10 @@ function Select-TrivorLogLines {
 function Get-TrivorGuiAppSource {
     # Texto da coluna "Origem" a partir do JSON do cliente.
     param([Parameter(Mandatory)] $App)
-    if ($App.PSObject.Properties.Match('WingetId').Count -gt 0 -and $App.WingetId) { return 'Winget' }
+    if ($App.PSObject.Properties.Match('WingetId').Count -gt 0 -and $App.WingetId) {
+        if ($App.PSObject.Properties.Match('Fallback').Count -gt 0 -and $App.Fallback) { return 'Winget (reserva MSI)' }
+        return 'Winget'
+    }
     $i = $App.Install
     if (-not $i) { return 'Somente detecção' }
     switch ($i.Method) {
@@ -117,6 +120,7 @@ function Get-TrivorGuiAppSource {
             if ($i.Signer) { return "URL (assinatura $($i.Signer))" }
             return 'URL (assinatura)'
         }
+        'UrlMsi'  { return "URL MSI (assinatura $($i.Signer))" }
         'RegFile' { return 'Registro (.reg)' }
     }
     return [string]$i.Method

@@ -90,3 +90,22 @@ Para exigir também um fabricante específico, informe a organização do certif
     }
 
 Quando o `Sha256` é informado, ele tem prioridade e a assinatura não é verificada.
+
+Instaladores MSI baixados de uma URL oficial usam o método `UrlMsi`. Ele sempre exige
+`Install.Signer` e assinatura digital válida, e executa `msiexec /i` com `SilentArgs`
+(padrão: `/qn /norestart`):
+
+    "Install": {
+      "Method": "UrlMsi",
+      "Url": "https://dl.google.com/dl/chrome/install/googlechromestandaloneenterprise64.msi",
+      "Signer": "Google LLC",
+      "CleanAfterInstall": true
+    }
+
+Apps instalados via winget podem ter um instalador reserva em `Fallback` (mesmo formato de
+`Install`). Ele só é usado na instalação, quando o winget falha porque o hash do instalador não
+confere com o manifesto (`0x8A150011`). Hoje o Google Chrome usa o MSI enterprise como reserva.
+
+Falhas passageiras (arquivo em uso `0x80070020`/`0x8A150103`, outra instalação em andamento
+`1618`/`0x80070652`/`0x8A150102`) são repetidas automaticamente uma vez, após 30 segundos, tanto
+no winget quanto nos instaladores EXE/MSI.
