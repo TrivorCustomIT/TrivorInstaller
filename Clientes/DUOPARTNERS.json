@@ -61,6 +61,7 @@
       "Install": {
         "Method": "UrlExe",
         "Url": "https://api.us0.swi-rc.com/download/getpcinstall.php?iid=831a56c3-5524-11f1-b22b-0affd1392461",
+        "Signer": "N-ABLE TECHNOLOGIES LTD",
         "SilentArgs": "/silent",
         "CacheFileName": "TakeControlAgent.exe",
         "Sha256": "",

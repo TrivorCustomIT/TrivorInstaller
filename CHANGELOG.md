@@ -6,6 +6,104 @@ Padrão de versão (a partir da v3.4.2): `vMAIOR.MENOR.BUG`, por exemplo `v3.4.4
 
 ---
 
+## v3.5.0 — Interface gráfica (WPF)
+
+### Adicionado
+
+- **Interface gráfica em WPF** (`core/Gui.ps1`), aberta automaticamente quando há um técnico logado na máquina. Telas:
+  - **Clientes:** cards com busca por nome.
+  - **Painel do cliente:**
+    - hostname atual × esperado;
+    - os modos Pós-Formatação, Compliance, Atualizar apps e Renomear hostname;
+    - tabela de apps com origem do instalador (winget, repositório com SHA256, URL com assinatura) e status (Instalado, Faltando, Versão antiga);
+    - **Instalar selecionados:** checkboxes que substituem o modo manual do console.
+  - **Execução:** progresso geral, etapas e log ao vivo. "Cancelar após o app atual" nunca interrompe um instalador no meio.
+  - **Resumo:** sucesso, falhas, código de saída da sessão (RMM), duração, resultado por etapa e aviso de reinício pendente, com a opção "Reiniciar ao fechar".
+  - **Upgrade geral:** lista os apps da máquina com atualização no winget, para escolher o que atualizar. Se a saída do winget vier em formato desconhecido, ela é exibida como texto, sem leitura arriscada.
+  - **Logs:** arquivos de `C:\TrivorInstaller\Logs` com filtro por nível (INFO, WARN, ERROR) e busca.
+  - **Sobre:** versão, canal, ambiente, pastas e retenção.
+- **Funcionamento:**
+  - Identidade visual da Trivor: logo, azul `#3568B1` e fonte Segoe UI.
+  - As ações rodam em segundo plano, então a janela não congela durante as instalações.
+  - Não é possível fechar a janela no meio de uma execução.
+  - A interface usa as mesmas funções de instalação e detecção do console. A lógica do motor não mudou.
+- **Console como fallback:** o menu de console continua igual e é usado automaticamente:
+  - em contexto SYSTEM/RMM (sem desktop);
+  - quando o WPF não está disponível;
+  - se a janela falhar ao abrir (o motivo vai para o log);
+  - ou quando forçado com `$env:TRIVOR_UI = 'console'`.
+- **`$env:TRIVOR_BRANCH`:** permite testar uma branch antes do merge. O nome é validado contra injeção de comando, e a branch é repassada na reelevação via UAC.
+- O resumo do console também passa a avisar o reinício pendente após a renomeação do hostname feita pela interface.
+
+### Adicionado — proteções contra erro do analista (console e interface)
+
+O Trivor Installer é de uso **sob demanda**: pelo terminal remoto (menu de console) ou na tela da máquina (interface gráfica). Ele não deve ser usado como tarefa agendada do RMM.
+
+- **Cliente sugerido:**
+  - O instalador identifica o cliente da máquina pelo prefixo do hostname (ex.: `FMC-8H2K93L` → FMCSV) e o sugere: no console basta Enter; na interface aparece um botão "Abrir cliente detectado".
+  - Só sugere quando **um único** cliente corresponde. Nunca adivinha.
+  - Novos campos opcionais no JSON do cliente, `Domain` (domínio AD) e `EntraTenantId` (tenant do Entra ID), para identificar também clientes sem prefixo.
+- **Alerta de divergência:** se o cliente escolhido não bate com a máquina (ou se mais de um cliente bate), é preciso **digitar o nome do cliente** para continuar. A decisão fica registrada no log como WARN.
+- **Pós-Formatação em máquina já configurada:** com metade ou mais dos apps já instalados (mínimo 2), o instalador avisa e sugere o Compliance. Manter a Pós-Formatação fica registrado no log como WARN.
+- **Resumo antes de executar:** cliente, modo, aplicativos e hostname (atual → esperado). Nada é executado sem confirmação.
+- **Tempo-limite na primeira pergunta do console:** sem resposta em 10 minutos, ou com a entrada fechada (ninguém conectado), o script encerra **sem executar nada**, com código de saída 1. Evita que fique travado se for disparado sem terminal interativo.
+- **Índice dos clientes:** os JSONs dos clientes passam a ser baixados **em paralelo** no início (cerca de 1 s nos testes, com os 42 clientes) e reaproveitados ao abrir cada cliente.
+- **Novo módulo `core/Guard.ps1`.**
+
+### Observações
+
+- O item "Relatórios" aparece no menu como "em breve" e será entregue na Sprint 3.
+- `Gui.ps1` é salvo em UTF-8 com BOM, para os acentos aparecerem corretamente no Windows PowerShell 5.1. Os demais módulos continuam em ASCII.
+
+### Alterado
+
+- User-Agent e versão de fallback atualizados para 3.5.0.
+
+---
+
+## v3.4.5 — Sprint 2: segurança
+
+### Corrigido (vulnerabilidades)
+
+- **Execução de código como SYSTEM via cache plantado.** Em contexto RMM/SYSTEM, a pasta de trabalho era `C:\Windows\Temp\TrivorInstaller`, com nome fixo, num local onde usuários comuns podem criar arquivos. Um usuário podia deixar ali, antes da execução, um instalador (ex.: `TakeControlAgent.exe`), um módulo `.ps1` ou um JSON de cliente, e o instalador executava ou carregava esse arquivo como SYSTEM.
+  - O trabalho passa a ser feito em `C:\TrivorInstaller`, protegido (dono Administradores, sem herança, acesso só para SYSTEM e Administradores) antes de qualquer download. Se não for possível proteger a pasta, a execução é abortada.
+  - Cada execução usa a própria subpasta `Sessao_<data>_<id>`, com módulos, JSONs de clientes, cache e saída do winget.
+- **Exclusão arbitrária como SYSTEM via junction.** A limpeza fazia `Remove-Item -Recurse` no caminho fixo. Uma junction criada ali por um usuário comum levava o PowerShell 5.1 a apagar o conteúdo do destino. A remoção agora nunca segue links: junctions e symlinks são removidos sem tocar no destino.
+- **`C:\TrivorInstaller` gravável por usuários comuns.** A pasta herdava de `C:\` permissão de modificação para Usuários Autenticados, o que permitia alterar ou ler logs (que contêm URLs de instalação dos clientes) e plantar junctions nos caminhos em que o SYSTEM grava.
+  - A pasta e todo o conteúdo existente passam a ter dono Administradores, sem herança, com acesso apenas para SYSTEM e Administradores.
+  - Links encontrados dentro dela são removidos antes da aplicação da ACL.
+- **Winget via Scheduled Task:** cada chamada usa uma subpasta própria dentro de `Sessao_<data>_<id>\winget`. Somente o usuário logado (pelo SID) recebe permissão de Modificar, e apenas nessa subpasta.
+
+### Adicionado
+
+- **Pasta de trabalho única em `C:\TrivorInstaller`:**
+
+  ```
+  C:\TrivorInstaller\
+    Logs\                        mantido
+    Sessao_<data>_<id>\          arquivos desta execução, apagados ao final
+  ```
+
+  - No início, são apagadas as sessões que sobraram de execuções interrompidas e a pasta `Winget` legada da v3.4.4.
+  - Execuções simultâneas (técnico + RMM) não interferem entre si: cada sessão fica bloqueada por um arquivo de lock exclusivo enquanto está ativa.
+  - Ao final, a execução apaga a própria sessão. Só os logs permanecem.
+- **Retenção de logs:** arquivos `.log` com mais de 90 dias são apagados automaticamente.
+- **Validação de assinatura digital (Authenticode) para instaladores sem SHA256** (`UrlExe` e `RepoExePublic`). O instalador só executa se a assinatura for válida.
+  - Novo campo opcional `Install.Signer`: exige que o certificado seja da organização informada (campo O= do certificado).
+  - Instalador sem hash nunca é reaproveitado do cache: é sempre baixado de novo e validado.
+  - Os 12 clientes com Take Control passam a exigir o assinante `N-ABLE TECHNOLOGIES LTD`, verificado no instalador real (certificado EV DigiCert, válido até 06/2027).
+- `.gitignore` com `.claude/settings.local.json`, que deixa de ser versionado (continha caminhos locais da máquina de desenvolvimento).
+
+### Removido
+
+- TLS 1.0 e 1.1 nos downloads. Agora apenas TLS 1.2 e, quando o .NET suportar, TLS 1.3.
+
+### Alterado
+
+- User-Agent e versão de fallback atualizados para 3.4.5.
+
+---
+
 ## v3.4.4 — Sprint 1: correção de bugs
 
 ### Corrigido

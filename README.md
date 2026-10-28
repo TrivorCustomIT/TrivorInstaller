@@ -21,6 +21,43 @@ e a gestão do parque tecnológico.
 ====================================================
 
 
+Como executar
+-------------
+
+Em um PowerShell aberto como Administrador:
+
+    irm https://raw.githubusercontent.com/TrivorCustomIT/TrivorInstaller/main/Install.ps1 | iex
+
+- Com um técnico logado na máquina, abre a **interface gráfica** (WPF).
+- Em contexto SYSTEM/RMM, ou se o WPF não estiver disponível, usa o **menu de console**.
+- Para forçar o console: `$env:TRIVOR_UI = 'console'` antes do comando.
+- Para testar uma branch antes do merge (nunca em produção):
+
+      $env:TRIVOR_BRANCH = 'nome-da-branch'
+      irm https://raw.githubusercontent.com/TrivorCustomIT/TrivorInstaller/nome-da-branch/Install.ps1 | iex
+
+Os arquivos ficam em `C:\TrivorInstaller` (logs mantidos por 90 dias; os arquivos de cada execução
+são apagados ao final).
+
+O Trivor Installer é de uso **sob demanda** (terminal remoto ou na tela da máquina). **Não use como
+tarefa agendada do RMM**: sem ninguém respondendo, ele encerra em até 10 minutos sem executar nada
+(código de saída 1).
+
+
+Proteções contra erro do analista
+---------------------------------
+
+- O cliente da máquina é **sugerido** pelo prefixo do hostname (ex.: `FMC-8H2K93L` → FMCSV).
+- Se o cliente escolhido não bater com a máquina, é preciso **digitar o nome do cliente** para continuar.
+- Pós-Formatação em máquina que já parece configurada gera um aviso, com a sugestão de usar o Compliance.
+- Antes de executar, aparece um **resumo**: cliente, modo, aplicativos e hostname.
+
+Para identificar também clientes sem prefixo de hostname, informe no JSON do cliente:
+
+    "Domain": "empresa.local",
+    "EntraTenantId": "00000000-0000-0000-0000-000000000000"
+
+
 Histórico de versões
 --------------------
 
@@ -40,3 +77,16 @@ Instaladores EXE/MSI (`RepoExePublic` e `UrlExe`) são considerados bem-sucedido
       "SilentArgs": "/silent",
       "SuccessExitCodes": [0, 1]
     }
+
+Instaladores sem `Sha256` só são executados se tiverem assinatura digital válida (Authenticode).
+Para exigir também um fabricante específico, informe a organização do certificado (campo O=) em
+`Install.Signer`:
+
+    "Install": {
+      "Method": "UrlExe",
+      "Url": "https://api.us0.swi-rc.com/download/getpcinstall.php?iid=...",
+      "Signer": "N-ABLE TECHNOLOGIES LTD",
+      "SilentArgs": "/silent"
+    }
+
+Quando o `Sha256` é informado, ele tem prioridade e a assinatura não é verificada.

@@ -7,7 +7,7 @@ function Wait-Enter {
 }
 
 function Get-ClientsPath {
-    return Join-Path $env:TEMP "TrivorInstaller\Clientes"
+    return Join-Path $global:TrivorBasePath "Clientes"
 }
 
 function Get-ClientList {
@@ -178,8 +178,105 @@ function Show-AppGrid {
     Write-Host ""
 }
 
+#region Protecoes contra erro do analista (Guard.ps1)
+
+$global:TrivorConfirmedClients = @{}
+
+function Confirm-TrivorClientChoiceConsole {
+    # Maquina parece de outro cliente (ou de mais de um): exige digitar o nome do cliente escolhido.
+    param([Parameter(Mandatory)] [string]$ClientName)
+
+    if (-not (Get-Command Test-TrivorClientChoice -ErrorAction SilentlyContinue)) { return $true }
+    $check = Test-TrivorClientChoice -Selected $ClientName -Match $global:TrivorClientMatch
+    if ($check -eq 'Ok' -or $global:TrivorConfirmedClients[$ClientName]) { return $true }
+
+    $m = $global:TrivorClientMatch
+    Write-Host ""
+    Write-Host "==================== ATENCAO ====================" -ForegroundColor Yellow
+    if ($check -eq 'Mismatch') {
+        Write-Host ("Esta maquina parece ser do cliente {0}" -f $m.Client) -ForegroundColor Yellow
+        Write-Host ("  motivo: {0}" -f ($m.Reasons -join '; ')) -ForegroundColor Yellow
+    } else {
+        Write-Host ("Mais de um cliente corresponde a esta maquina: {0}" -f ($m.Clients -join ', ')) -ForegroundColor Yellow
+    }
+    Write-Host ("Voce escolheu: {0}" -f $ClientName) -ForegroundColor Yellow
+    Write-Host "Aplicar o cliente errado instala o agente RMM e renomeia o hostname para outro cliente." -ForegroundColor Yellow
+    Write-Host "=================================================" -ForegroundColor Yellow
+    $typed = Read-Host ("Para continuar com {0}, digite o nome do cliente (Enter cancela)" -f $ClientName)
+
+    if ($typed -and $typed.Trim() -eq $ClientName) {
+        $global:TrivorConfirmedClients[$ClientName] = $true
+        Write-Log ("Analista confirmou cliente {0} apesar da deteccao ({1})." -f $ClientName, $check) "WARN"
+        return $true
+    }
+    Write-Host "Nome nao confere. Voltando ao menu de clientes." -ForegroundColor Red
+    Write-Log ("Cliente {0} nao confirmado pelo analista ({1}). Nada foi executado." -f $ClientName, $check) "INFO"
+    return $false
+}
+
+function Confirm-TrivorRunPlanConsole {
+    # Resumo do que sera feito antes de executar.
+    param([Parameter(Mandatory)] $Plan)
+
+    $label = switch ($Plan.Mode) { 'PostFormat' { 'Pos-Formatacao' } 'Compliance' { 'Compliance' } 'Update' { 'Winget update dos apps do cliente' } 'Hostname' { 'Renomear hostname' } }
+    $hostText = switch ($Plan.HostAction) {
+        'Renomear'       { "{0} -> {1} (exige reiniciar)" -f $Plan.CurrentHostname, $Plan.ExpectedHostname }
+        'JaCorreto'      { "{0} (ja esta correto)" -f $Plan.CurrentHostname }
+        'SemPrefixo'     { "mantido (cliente sem prefixo)" }
+        'SerialInvalido' { "mantido (serial invalido, ver log)" }
+        default          { "mantido" }
+    }
+    Write-Host ""
+    Write-Host "------------- Resumo antes de executar -------------" -ForegroundColor Cyan
+    Write-Host ("Cliente : {0}" -f $Plan.ClientName)
+    Write-Host ("Modo    : {0}" -f $label)
+    if ($Plan.Mode -ne 'Hostname') { Write-Host ("Apps    : {0} ({1})" -f $Plan.AppCount, ($Plan.AppNames -join ', ')) }
+    Write-Host ("Hostname: {0}" -f $hostText)
+    Write-Host "----------------------------------------------------" -ForegroundColor Cyan
+    $ok = (Read-Host "Confirmar? (S/N)") -match '^(S|s|Y|y)$'
+    if (-not $ok) { Write-Host "Cancelado. Nada foi executado." -ForegroundColor Yellow }
+    return $ok
+}
+
+function Get-TrivorPostFormatGuardConsole {
+    # Pos-Formatacao em maquina que ja parece configurada: sugere o Compliance.
+    # Retorna PostFormat, Compliance ou Cancel.
+    param([Parameter(Mandatory)] $Config)
+
+    if (-not (Get-Command Get-TrivorPostFormatAssessment -ErrorAction SilentlyContinue)) { return 'PostFormat' }
+    Write-Host "Verificando o que ja esta instalado..." -ForegroundColor DarkGray
+    $states = @(foreach ($app in @($Config.Applications)) {
+        try { $s = Get-ApplicationState -App $app; [pscustomobject]@{ Installed = [bool]$s.Installed; Error = $null } }
+        catch { [pscustomobject]@{ Installed = $false; Error = $_.Exception.Message } }
+    })
+    $a = Get-TrivorPostFormatAssessment -States $states
+    if (-not $a.LooksConfigured) { return 'PostFormat' }
+
+    Write-Host ""
+    Write-Host ("Esta maquina nao parece recem-formatada: {0} de {1} apps ja estao instalados." -f $a.Installed, $a.Total) -ForegroundColor Yellow
+    Write-Host "A Pos-Formatacao reinstala tudo sem verificar. O Compliance instala so o que falta e atualiza o resto." -ForegroundColor Yellow
+    $c = Read-Host "[C] Compliance (recomendado)  [P] Pos-Formatacao mesmo assim  [X] Cancelar"
+    switch -Regex ($c) {
+        '^(C|c)$' { Write-Log "Pos-Formatacao trocada por Compliance (maquina ja configurada)." "INFO"; return 'Compliance' }
+        '^(P|p)$' { Write-Log ("Pos-Formatacao mantida pelo analista em maquina com {0}/{1} apps instalados." -f $a.Installed, $a.Total) "WARN"; return 'PostFormat' }
+        default   { Write-Host "Cancelado. Nada foi executado." -ForegroundColor Yellow; return 'Cancel' }
+    }
+}
+
+function Get-TrivorExpectedHostnameFor {
+    param($Config)
+    if ($Config.PSObject.Properties.Match('HostnamePrefix').Count -gt 0 -and $Config.HostnamePrefix) {
+        return Get-ExpectedHostname -Prefix ([string]$Config.HostnamePrefix).ToUpper()
+    }
+    return $null
+}
+
+#endregion
+
 function Show-ClientMenu {
     param([Parameter(Mandatory)] [string]$ClientName)
+
+    if (-not (Confirm-TrivorClientChoiceConsole -ClientName $ClientName)) { Wait-Enter; return }
 
     while ($true) {
         Clear-Host
@@ -204,8 +301,13 @@ function Show-ClientMenu {
         if (-not $cfg) { return }
 
         if ($choice -eq "1") {
+            $mode = Get-TrivorPostFormatGuardConsole -Config $cfg
+            if ($mode -eq 'Cancel') { Wait-Enter; continue }
+            $plan = Get-TrivorRunPlan -Mode $mode -ClientName $ClientName -Config $cfg -ExpectedHostname (Get-TrivorExpectedHostnameFor $cfg)
+            if (-not (Confirm-TrivorRunPlanConsole -Plan $plan)) { Wait-Enter; continue }
             Invoke-HostnameCheck -ClientConfig $cfg
-            Invoke-PostFormatInstallation -ClientConfig $cfg
+            if ($mode -eq 'Compliance') { Invoke-ClientInstallation -ClientConfig $cfg }
+            else { Invoke-PostFormatInstallation -ClientConfig $cfg }
             Write-Host ""
             Write-Host "Concluido." -ForegroundColor Green
             Wait-Enter
@@ -213,6 +315,8 @@ function Show-ClientMenu {
         }
 
         if ($choice -eq "2") {
+            $plan = Get-TrivorRunPlan -Mode Compliance -ClientName $ClientName -Config $cfg -ExpectedHostname (Get-TrivorExpectedHostnameFor $cfg)
+            if (-not (Confirm-TrivorRunPlanConsole -Plan $plan)) { Wait-Enter; continue }
             Invoke-HostnameCheck -ClientConfig $cfg
             Invoke-ClientInstallation -ClientConfig $cfg
             Write-Host ""
@@ -260,6 +364,8 @@ function Show-ClientMenu {
         }
 
         if ($choice -eq "4") {
+            $plan = Get-TrivorRunPlan -Mode Update -ClientName $ClientName -Config $cfg
+            if (-not (Confirm-TrivorRunPlanConsole -Plan $plan)) { Wait-Enter; continue }
             Invoke-ClientUpdateOnly -ClientConfig $cfg
             Write-Host ""
             Write-Host "Concluido." -ForegroundColor Green
@@ -268,6 +374,8 @@ function Show-ClientMenu {
         }
 
         if ($choice -eq "5") {
+            $plan = Get-TrivorRunPlan -Mode Hostname -ClientName $ClientName -Config $cfg -ExpectedHostname (Get-TrivorExpectedHostnameFor $cfg)
+            if (-not (Confirm-TrivorRunPlanConsole -Plan $plan)) { Wait-Enter; continue }
             Invoke-HostnameCheck -ClientConfig $cfg
             Write-Host ""
             Wait-Enter
@@ -319,6 +427,14 @@ function Show-ClientGrid {
 }
 
 function Start-MainMenu {
+    $match = $null
+    if (Get-Command Initialize-TrivorClientDetection -ErrorAction SilentlyContinue) {
+        Write-Host "Identificando o cliente desta maquina..." -ForegroundColor DarkGray
+        try { $match = Initialize-TrivorClientDetection -Names @(Get-ClientList) -ClientsPath (Get-ClientsPath) }
+        catch { Write-Log "Deteccao de cliente indisponivel: $($_.Exception.Message)" "WARN" }
+    }
+    $firstPrompt = $true
+
     while ($true) {
         Clear-Host
         Show-Banner
@@ -332,11 +448,44 @@ function Start-MainMenu {
 
         Show-ClientGrid -Clients $clients
 
-        $choice = Read-Host "Digite o numero"
+        $prompt = "Digite o numero"
+        if ($match -and $match.Status -eq 'Single') {
+            Write-Host ("Cliente detectado nesta maquina: {0}  ({1})" -f $match.Client, ($match.Reasons -join '; ')) -ForegroundColor Green
+            Write-Host ""
+            $prompt = "Digite o numero (Enter = {0})" -f $match.Client
+        }
+        elseif ($match -and $match.Status -eq 'Conflict') {
+            Write-Host ("ATENCAO: mais de um cliente corresponde a esta maquina: {0}. Confira antes de escolher." -f ($match.Clients -join ', ')) -ForegroundColor Yellow
+            Write-Host ""
+        }
+
+        if ($firstPrompt) {
+            # Tempo-limite so na primeira pergunta: o script e interativo e nao deve
+            # ficar travado se for disparado sem ninguem no terminal.
+            $firstPrompt = $false
+            $answer = Read-TrivorFirstInput -Prompt $prompt
+            if ($answer.Status -ne 'Ok') {
+                $why = if ($answer.Status -eq 'Timeout') { "Nenhuma resposta em $([int]($global:TrivorFirstInputTimeoutSeconds / 60)) minutos" } else { "Entrada do console fechada (nenhum operador conectado)" }
+                Write-Host ""
+                Write-Host "$why. O Trivor Installer e interativo e nao deve ser usado como tarefa agendada. Encerrando sem executar nada." -ForegroundColor Red
+                Write-Log "$why. Encerrando sem executar nada (exit 1)." "ERROR"
+                $global:TrivorExitCode = 1
+                return
+            }
+            $choice = $answer.Text
+        }
+        else {
+            $choice = Read-Host $prompt
+        }
 
         if ($choice -eq "0") {
             Invoke-Cleanup
             return
+        }
+
+        if ([string]::IsNullOrWhiteSpace($choice) -and $match -and $match.Status -eq 'Single') {
+            Show-ClientMenu -ClientName $match.Client
+            continue
         }
 
         $num = 0

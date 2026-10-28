@@ -1,5 +1,18 @@
 Write-Host "Trivor Installer iniciado"
 
+# Branch de origem dos modulos e clientes. Padrao: main (producao).
+# Para testar uma branch antes do merge: $env:TRIVOR_BRANCH = '<branch>' (validado abaixo).
+$TrivorBranchName = "main"
+if (-not [string]::IsNullOrWhiteSpace($env:TRIVOR_BRANCH)) {
+    if ($env:TRIVOR_BRANCH -match '^[A-Za-z0-9._/-]{1,100}$' -and $env:TRIVOR_BRANCH -notmatch '\.\.') {
+        $TrivorBranchName = $env:TRIVOR_BRANCH
+        Write-Host "ATENCAO: usando a branch de teste '$TrivorBranchName' (nao e producao)." -ForegroundColor Yellow
+    }
+    else {
+        Write-Host "TRIVOR_BRANCH invalida ignorada. Usando main." -ForegroundColor Yellow
+    }
+}
+
 # --- Auto-elevacao compativel com irm | iex ---
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
@@ -23,27 +36,210 @@ if (-not $isAdmin) {
     } else {
         Write-Host "Elevando privilegios..."
         $tempScript = Join-Path $env:TEMP "TrivorLauncher.ps1"
-        $url = "https://raw.githubusercontent.com/TrivorCustomIT/TrivorInstaller/main/Install.ps1"
+        $url = "https://raw.githubusercontent.com/TrivorCustomIT/TrivorInstaller/$TrivorBranchName/Install.ps1"
         Invoke-WebRequest -Uri $url -OutFile $tempScript -UseBasicParsing
-        Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$tempScript`"" -Verb RunAs
+        if ($TrivorBranchName -eq "main") {
+            Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$tempScript`"" -Verb RunAs
+        }
+        else {
+            # O processo elevado nao herda variaveis de ambiente de forma confiavel: repassa a branch
+            # (ja validada pela regex acima, sem aspas nem separadores de comando)
+            $tempScriptQuoted = $tempScript.Replace("'", "''")   # perfil com apostrofo (ex.: O'Brien)
+            Start-Process powershell -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"`$env:TRIVOR_BRANCH='$TrivorBranchName'; & '$tempScriptQuoted'`"" -Verb RunAs
+        }
         exit
     }
 }
 
+# Somente TLS 1.2 (e 1.3 quando o .NET suportar)
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
+try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls13 } catch { Write-Verbose "TLS 1.3 indisponivel neste .NET; usando TLS 1.2." }
 
-$global:TrivorBasePath = Join-Path $env:TEMP "TrivorInstaller"
+#region Seguranca de diretorios
 
-function Invoke-Cleanup {
+function Test-TrivorReparsePoint {
+    param([Parameter(Mandatory)] [string]$Path)
     try {
-        if (Test-Path $global:TrivorBasePath) {
-            Remove-Item $global:TrivorBasePath -Recurse -Force -ErrorAction SilentlyContinue
-        }
+        $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+        return [bool]($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint)
     }
-    catch {}
+    catch { return $false }
 }
 
-Invoke-Cleanup
+function Remove-TrivorReparsePoints {
+    # Percorre a arvore sem nunca descer em reparse points e remove apenas os links
+    # (junction/symlink), preservando o destino. Retorna a quantidade removida.
+    param([Parameter(Mandatory)] [string]$Path)
+
+    $removed = 0
+    foreach ($child in @(Get-ChildItem -LiteralPath $Path -Force -ErrorAction SilentlyContinue)) {
+        if ($child.Attributes -band [System.IO.FileAttributes]::ReparsePoint) {
+            Write-Host "[WARN] Link removido: $($child.FullName)" -ForegroundColor Yellow
+            try {
+                if ($child.PSIsContainer) { [System.IO.Directory]::Delete($child.FullName) } else { [System.IO.File]::Delete($child.FullName) }
+                $removed++
+            } catch {
+                Write-Host "[WARN] Nao foi possivel remover o link $($child.FullName): $($_.Exception.Message)" -ForegroundColor Yellow
+            }
+        }
+        elseif ($child.PSIsContainer) {
+            $removed += Remove-TrivorReparsePoints -Path $child.FullName
+        }
+    }
+    return $removed
+}
+
+function Remove-TrivorDirectorySafe {
+    # Remove um diretorio sem nunca seguir junctions/symlinks. Se o caminho for um
+    # reparse point, remove apenas o link, preservando o destino.
+    param([Parameter(Mandatory)] [string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path)) { return }
+
+    if (Test-TrivorReparsePoint -Path $Path) {
+        Write-Host "[WARN] '$Path' e um link (junction/symlink). Removendo apenas o link." -ForegroundColor Yellow
+        [System.IO.Directory]::Delete($Path)
+        return
+    }
+
+    # Links internos sao removidos antes, para o Remove-Item recursivo nao entrar neles
+    $null = Remove-TrivorReparsePoints -Path $Path
+
+    Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+function Protect-TrivorDirectory {
+    # Cria (se necessario) e restringe um diretorio: dono Administradores, sem heranca,
+    # Controle Total somente para SYSTEM e Administradores. SIDs evitam problema com
+    # nomes localizados (ex: "Administradores" em pt-BR).
+    # -ModifySids concede Modificar a SIDs adicionais (ex: usuario logado da Scheduled Task).
+    # -ResetChildren aplica a nova ACL a arquivos/pastas ja existentes.
+    param(
+        [Parameter(Mandatory)] [string]$Path,
+        [string[]]$ModifySids = @(),
+        [switch]$ResetChildren
+    )
+
+    try {
+        if ((Test-Path -LiteralPath $Path) -and (Test-TrivorReparsePoint -Path $Path)) {
+            Write-Host "[WARN] '$Path' e um link (junction/symlink). Removendo o link e recriando o diretorio." -ForegroundColor Yellow
+            [System.IO.Directory]::Delete($Path)
+        }
+        if (-not (Test-Path -LiteralPath $Path)) {
+            New-Item -ItemType Directory -Force -Path $Path | Out-Null
+        }
+
+        $inherit = [System.Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit'
+        $noProp  = [System.Security.AccessControl.PropagationFlags]::None
+        $allow   = [System.Security.AccessControl.AccessControlType]::Allow
+        $admins  = New-Object System.Security.Principal.SecurityIdentifier("S-1-5-32-544")
+        $system  = New-Object System.Security.Principal.SecurityIdentifier("S-1-5-18")
+
+        $acl = New-Object System.Security.AccessControl.DirectorySecurity
+        $acl.SetOwner($admins)
+        $acl.SetAccessRuleProtection($true, $false)
+        foreach ($sid in @($system, $admins)) {
+            $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($sid, 'FullControl', $inherit, $noProp, $allow)))
+        }
+        foreach ($s in $ModifySids) {
+            if ([string]::IsNullOrWhiteSpace($s)) { continue }
+            $sid = New-Object System.Security.Principal.SecurityIdentifier($s)
+            $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($sid, 'Modify', $inherit, $noProp, $allow)))
+        }
+
+        Set-Acl -LiteralPath $Path -AclObject $acl -ErrorAction Stop
+
+        if ($ResetChildren -and (Get-ChildItem -LiteralPath $Path -Force -ErrorAction SilentlyContinue)) {
+            # Links internos sao removidos antes, para o icacls /T nunca alterar o destino deles
+            $null = Remove-TrivorReparsePoints -Path $Path
+
+            # Dono Administradores e ACL apenas herdada em tudo que ja existia
+            & icacls.exe "$Path\*" /setowner "*S-1-5-32-544" /T /C /Q 2>&1 | Out-Null
+            & icacls.exe "$Path\*" /reset /T /C /Q 2>&1 | Out-Null
+        }
+        return $true
+    }
+    catch {
+        Write-Host "[WARN] Nao foi possivel restringir permissoes de '$Path': $($_.Exception.Message)" -ForegroundColor Yellow
+        return $false
+    }
+}
+
+#endregion
+
+#region Diretorio de trabalho (C:\TrivorInstaller)
+# Estrutura:
+#   C:\TrivorInstaller\Logs\                 mantido (retencao em Logger.ps1)
+#   C:\TrivorInstaller\Sessao_<data>_<id>\   core, Clientes, cache e winget desta execucao
+# A raiz e protegida (SYSTEM + Administradores) ANTES de qualquer download, e cada sessao
+# e apagada ao final. Uma sessao ativa e identificada por um lock exclusivo, para que
+# execucoes simultaneas (tecnico + RMM) nao apaguem os arquivos uma da outra.
+
+$global:TrivorRoot        = Join-Path $env:SystemDrive "TrivorInstaller"
+$global:TrivorLogsName    = "Logs"
+$global:TrivorSessionLock = $null
+$global:TrivorBasePath    = Join-Path $global:TrivorRoot ("Sessao_{0}_{1}" -f (Get-Date -Format "yyyyMMdd_HHmmss"), [guid]::NewGuid().ToString('N').Substring(0, 8))
+
+function Test-TrivorSessionActive {
+    # Sessao ativa = lock aberto por outro processo. Sem lock, considera ativa apenas se
+    # foi criada ha menos de 5 minutos (janela entre criar a pasta e abrir o lock).
+    param([Parameter(Mandatory)] [string]$Path)
+
+    $lockFile = Join-Path $Path "session.lock"
+    if (-not (Test-Path -LiteralPath $lockFile)) {
+        $dir = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+        return [bool]($dir -and $dir.CreationTime -gt (Get-Date).AddMinutes(-5))
+    }
+    try {
+        $fs = [System.IO.File]::Open($lockFile, 'Open', 'ReadWrite', 'None')
+        $fs.Dispose()
+        return $false
+    }
+    catch { return $true }
+}
+
+function Initialize-TrivorRoot {
+    # 1) Protege a raiz (remove junction no lugar dela e define dono/ACL)
+    if (-not (Protect-TrivorDirectory -Path $global:TrivorRoot)) {
+        throw "Nao foi possivel proteger $($global:TrivorRoot). Abortando por seguranca."
+    }
+
+    # 2) Remove links plantados em qualquer nivel, sem seguir o destino
+    $null = Remove-TrivorReparsePoints -Path $global:TrivorRoot
+
+    # 3) Apaga tudo que nao e Logs nem sessao ativa (sobras de execucoes interrompidas
+    #    e a pasta Winget legada da v3.4.4)
+    foreach ($child in @(Get-ChildItem -LiteralPath $global:TrivorRoot -Force -ErrorAction SilentlyContinue)) {
+        if ($child.Name -eq $global:TrivorLogsName) { continue }
+        if ($child.PSIsContainer -and $child.Name -like "Sessao_*" -and (Test-TrivorSessionActive -Path $child.FullName)) {
+            Write-Host "Sessao ativa de outra execucao mantida: $($child.Name)" -ForegroundColor DarkGray
+            continue
+        }
+        if ($child.PSIsContainer) { Remove-TrivorDirectorySafe -Path $child.FullName }
+        else { Remove-Item -LiteralPath $child.FullName -Force -ErrorAction SilentlyContinue }
+    }
+
+    # 4) Logs: ACL apenas herdada da raiz em todo o conteudo existente
+    $null = Protect-TrivorDirectory -Path (Join-Path $global:TrivorRoot $global:TrivorLogsName) -ResetChildren
+
+    # 5) Sessao desta execucao + lock exclusivo
+    New-Item -ItemType Directory -Force -Path $global:TrivorBasePath | Out-Null
+    $global:TrivorSessionLock = [System.IO.File]::Open((Join-Path $global:TrivorBasePath "session.lock"), 'Create', 'ReadWrite', 'None')
+    $global:TrivorRootReady = $true
+}
+
+function Invoke-Cleanup {
+    # Apaga a sessao desta execucao; C:\TrivorInstaller\Logs e mantido.
+    try {
+        if ($global:TrivorSessionLock) { $global:TrivorSessionLock.Dispose(); $global:TrivorSessionLock = $null }
+        if ($global:TrivorBasePath -and (Test-Path -LiteralPath $global:TrivorBasePath)) {
+            Remove-TrivorDirectorySafe -Path $global:TrivorBasePath
+        }
+    }
+    catch { Write-Host "[WARN] Falha na limpeza de $($global:TrivorBasePath): $($_.Exception.Message)" -ForegroundColor Yellow }
+}
+
+#endregion
 
 try {
     $global:TrivorExitCode      = 0
@@ -54,12 +250,13 @@ try {
     $CorePath    = Join-Path $BasePath "core"
     $ClientsPath = Join-Path $BasePath "Clientes"
 
+    Initialize-TrivorRoot
     New-Item -ItemType Directory -Force -Path $CorePath    | Out-Null
     New-Item -ItemType Directory -Force -Path $ClientsPath | Out-Null
 
     $Owner  = "TrivorCustomIT"
     $Repo   = "TrivorInstaller"
-    $Branch = "main"
+    $Branch = $TrivorBranchName
 
     $CoreBaseRaw = "https://raw.githubusercontent.com/$Owner/$Repo/$Branch/core"
 
@@ -70,7 +267,9 @@ try {
         "Detection.ps1",
         "Engine.ps1",
         "Hostname.ps1",
-        "Menu.ps1"
+        "Guard.ps1",
+        "Menu.ps1",
+        "Gui.ps1"
     )
 
     foreach ($Module in $Modules) {
@@ -124,7 +323,9 @@ try {
     . "$CorePath\Detection.ps1"
     . "$CorePath\Engine.ps1"
     . "$CorePath\Hostname.ps1"
+    . "$CorePath\Guard.ps1"
     . "$CorePath\Menu.ps1"
+    . "$CorePath\Gui.ps1"
 
     $global:TrivorVersion = Get-InstallerVersion
 
@@ -134,7 +335,23 @@ try {
 
     Initialize-Cache
     Show-Banner
-    Start-MainMenu
+
+    # Interface grafica quando ha desktop interativo; console em SYSTEM/RMM ou se o WPF falhar.
+    # Forcar o console: $env:TRIVOR_UI = 'console'
+    $gui = Test-TrivorGuiAvailable
+    if ($gui.Available) {
+        try {
+            Start-TrivorGui
+        }
+        catch {
+            Write-Log "Falha na interface grafica: $($_.Exception.Message). Usando o menu de console." "WARN"
+            Start-MainMenu
+        }
+    }
+    else {
+        Write-Log "Interface grafica indisponivel ($($gui.Reason)). Usando o menu de console." "INFO"
+        Start-MainMenu
+    }
 }
 catch {
     if (Get-Command Write-Log -ErrorAction SilentlyContinue) {
@@ -181,5 +398,11 @@ finally {
     }
 
     Invoke-Cleanup
+
+    if ($global:TrivorRebootOnExit) {
+        # Pedido na interface grafica ("Reiniciar ao fechar"), depois da limpeza da sessao
+        Write-Host "Reiniciando a maquina..." -ForegroundColor Yellow
+        Restart-Computer -Force
+    }
     exit $global:TrivorExitCode
 }
