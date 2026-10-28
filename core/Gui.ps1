@@ -380,7 +380,7 @@ $script:TrivorGuiXaml = @'
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Trivor Installer" Width="1280" Height="800" MinWidth="1100" MinHeight="680"
-        WindowStartupLocation="CenterScreen" Background="#F3F3F3"
+        WindowStartupLocation="CenterScreen" WindowState="Maximized" Background="#F3F3F3"
         FontFamily="Segoe UI" FontSize="14" Foreground="#1B1B1B" UseLayoutRounding="True">
   <Window.Resources>
     <SolidColorBrush x:Key="Accent" Color="#3568B1"/>

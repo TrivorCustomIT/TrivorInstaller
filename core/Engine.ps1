@@ -186,7 +186,7 @@ function Invoke-TrivorDownloadWithProgress {
                 $request.MaximumAutomaticRedirections = 10
                 $request.Timeout = 300000
                 $request.ReadWriteTimeout = 300000
-                $request.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) TrivorInstaller/3.5.1"
+                $request.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) TrivorInstaller/3.5.2"
                 $request.Accept = "*/*"
 
                 $response = $request.GetResponse()

@@ -6,6 +6,15 @@ Padrão de versão (a partir da v3.4.2): `vMAIOR.MENOR.BUG`, por exemplo `v3.4.4
 
 ---
 
+## v3.5.2 — Interface maximizada
+
+### Alterado
+
+- **Interface:** a janela abre maximizada. Ao restaurar, volta ao tamanho padrão (1280 × 800), centralizada.
+- User-Agent e versão de fallback atualizados para 3.5.2.
+
+---
+
 ## v3.5.1 — Correções após o primeiro uso em produção
 
 ### Corrigido
