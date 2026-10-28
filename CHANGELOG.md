@@ -6,6 +6,20 @@ Padrão de versão (a partir da v3.4.2): `vMAIOR.MENOR.BUG`, por exemplo `v3.4.4
 
 ---
 
+## v3.5.1 — Correções após o primeiro uso em produção
+
+### Corrigido
+
+- **Interface:** erro "Não é possível chamar um método em uma expressão de valor nulo" ao terminar a identificação do cliente, antes de qualquer cliente ser aberto. Com o erro, a faixa ficava presa em "Identificando o cliente desta máquina…" e o cursor de "ocupado" podia continuar ativo. Além da correção, uma falha ao reabilitar a tela não impede mais que o resultado da tarefa seja exibido.
+- **Log:** a versão aparecia duplicada (`vv3.4.3`).
+- **Log:** a saída do winget aparecia com acentos quebrados (`VersÃ£o`). Ela é UTF-8 e agora é lida como tal no Windows PowerShell 5.1.
+
+### Alterado
+
+- User-Agent e versão de fallback atualizados para 3.5.1.
+
+---
+
 ## v3.5.0 — Interface gráfica (WPF)
 
 ### Adicionado

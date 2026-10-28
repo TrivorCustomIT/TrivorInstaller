@@ -1154,7 +1154,13 @@ function Complete-TrivorGuiJob {
     $job.Runspace.Dispose()
     $script:Gui.Timer.Stop()
     $script:Gui.Job = $null
-    Set-TrivorGuiBusy -Busy $false
+    # Uma falha ao reabilitar a tela nao pode impedir o OnDone (resultado da tarefa)
+    try { Set-TrivorGuiBusy -Busy $false }
+    catch {
+        Write-Log "Falha ao reabilitar a interface: $($_.Exception.Message)" "WARN"
+        $script:Gui.Busy = $false
+        $script:Gui.Ui.Window.Cursor = $null
+    }
     if ($job.OnDone) { & $job.OnDone $job.Sync }
 }
 
@@ -1232,6 +1238,12 @@ function Update-TrivorGuiClientButtons {
     $ui = $script:Gui.Ui
     $cfg = $script:Gui.Config
     $sel = @($script:Gui.Rows | Where-Object { $_.Selected }).Count
+    if (-not $cfg) {
+        # Nenhum cliente aberto ainda (ex.: fim da deteccao inicial). Passar $null adiante no
+        # pipeline gera um item nulo e quebrava esta funcao.
+        $ui.SelectedDesc.Text = "Instala ou atualiza os marcados (0)"
+        return
+    }
     $ui.SelectedDesc.Text = "Instala ou atualiza os marcados ($sel)"
     if ($script:Gui.Busy) { return }
     $ui.BtnSelected.IsEnabled = ($sel -gt 0)

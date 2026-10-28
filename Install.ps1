@@ -331,7 +331,7 @@ try {
 
     Initialize-Logger
     Start-TrivorTranscript
-    Write-Log "==== TrivorInstaller v$global:TrivorVersion ====" "INFO"
+    Write-Log "==== TrivorInstaller $global:TrivorVersion ====" "INFO"
 
     Initialize-Cache
     Show-Banner
