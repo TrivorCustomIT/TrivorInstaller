@@ -186,7 +186,7 @@ function Invoke-TrivorDownloadWithProgress {
                 $request.MaximumAutomaticRedirections = 10
                 $request.Timeout = 300000
                 $request.ReadWriteTimeout = 300000
-                $request.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) TrivorInstaller/3.5.0"
+                $request.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) TrivorInstaller/3.5.1"
                 $request.Accept = "*/*"
 
                 $response = $request.GetResponse()
@@ -724,11 +724,11 @@ function Write-WingetResult {
     $stdErrText = ""
 
     if ($Result.StdOut -and (Test-Path $Result.StdOut)) {
-        try { $stdOutText = (Get-Content $Result.StdOut -Raw -ErrorAction SilentlyContinue) } catch {}
+        try { $stdOutText = (Get-Content $Result.StdOut -Raw -Encoding UTF8 -ErrorAction SilentlyContinue) } catch {}
     }
 
     if ($Result.StdErr -and (Test-Path $Result.StdErr)) {
-        try { $stdErrText = (Get-Content $Result.StdErr -Raw -ErrorAction SilentlyContinue) } catch {}
+        try { $stdErrText = (Get-Content $Result.StdErr -Raw -Encoding UTF8 -ErrorAction SilentlyContinue) } catch {}
     }
 
     $msg = "$Action | Target=$Target | ExitCode=$($Result.ExitCode) | StdOutFile=$($Result.StdOut) | StdErrFile=$($Result.StdErr)"

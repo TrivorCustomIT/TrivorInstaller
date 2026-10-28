@@ -92,7 +92,7 @@ function Initialize-WingetListCache {
 
         if ($result.StdOut -and (Test-Path $result.StdOut)) {
             try {
-                $global:TrivorWingetListCache = Get-Content $result.StdOut -Raw -ErrorAction SilentlyContinue
+                $global:TrivorWingetListCache = Get-Content $result.StdOut -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
                 Write-Log "Lista winget carregada ($($global:TrivorWingetListCache.Length) bytes)" "INFO"
             } catch {
                 Write-Log "Falha ao ler lista winget: $($_.Exception.Message)" "WARN"
