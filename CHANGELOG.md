@@ -6,6 +6,27 @@ Padrão de versão (a partir da v3.4.2): `vMAIOR.MENOR.BUG`, por exemplo `v3.4.4
 
 ---
 
+## v3.5.2 — Nova tentativa automática, instalador reserva do Chrome e interface maximizada
+
+### Adicionado
+
+- **Nova tentativa automática:** falhas passageiras são repetidas uma vez, após 30 segundos, no winget (instalar e atualizar) e nos instaladores EXE/MSI. Códigos tratados: `0x80070020` e `0x8A150103` (arquivo em uso), `1618`, `0x80070652` e `0x8A150102` (outra instalação em andamento). Motivo: o Adobe Reader falhou em produção com `0x80070020` e instalou na segunda execução.
+- **Método `UrlMsi`:** instala MSI baixado de URL oficial com `msiexec /i`. Exige `Install.Signer` e assinatura digital válida, e confere o cabeçalho do arquivo MSI após o download.
+- **Instalador reserva (`Fallback`):** quando o winget falha na instalação porque o hash do instalador não confere com o manifesto (`0x8A150011`), o instalador reserva do app é usado. Os 42 clientes receberam o MSI enterprise oficial do Google Chrome como reserva (assinante "Google LLC"). Motivo: o Chrome falhou em produção com `0x8A150011`, pois a Google troca o MSI na mesma URL antes de o manifesto do winget ser atualizado.
+- **Interface:** a coluna "Origem" mostra "Winget (reserva MSI)" para apps com instalador reserva.
+
+### Alterado
+
+- **Interface:** a janela abre maximizada. Ao restaurar, volta ao tamanho padrão (1280 × 800), centralizada.
+- A execução dos instaladores `RepoExePublic` e `UrlExe` passou para uma função única. Se o instalador não puder ser executado, o arquivo em cache também é apagado quando `CleanAfterInstall` está ativo (antes, no `UrlExe`, ficava no cache da sessão até a limpeza final).
+- User-Agent e versão de fallback atualizados para 3.5.2.
+
+### Limitação conhecida
+
+- O instalador reserva só é usado na instalação. Se o Chrome já estiver instalado e a atualização via winget falhar por hash, a falha continua sendo registrada (o Chrome se atualiza sozinho em seguida).
+
+---
+
 ## v3.5.1 — Correções após o primeiro uso em produção
 
 ### Corrigido

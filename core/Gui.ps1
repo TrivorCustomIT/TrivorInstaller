@@ -107,7 +107,10 @@ function Select-TrivorLogLines {
 function Get-TrivorGuiAppSource {
     # Texto da coluna "Origem" a partir do JSON do cliente.
     param([Parameter(Mandatory)] $App)
-    if ($App.PSObject.Properties.Match('WingetId').Count -gt 0 -and $App.WingetId) { return 'Winget' }
+    if ($App.PSObject.Properties.Match('WingetId').Count -gt 0 -and $App.WingetId) {
+        if ($App.PSObject.Properties.Match('Fallback').Count -gt 0 -and $App.Fallback) { return 'Winget (reserva MSI)' }
+        return 'Winget'
+    }
     $i = $App.Install
     if (-not $i) { return 'Somente detecção' }
     switch ($i.Method) {
@@ -117,6 +120,7 @@ function Get-TrivorGuiAppSource {
             if ($i.Signer) { return "URL (assinatura $($i.Signer))" }
             return 'URL (assinatura)'
         }
+        'UrlMsi'  { return "URL MSI (assinatura $($i.Signer))" }
         'RegFile' { return 'Registro (.reg)' }
     }
     return [string]$i.Method
@@ -380,7 +384,7 @@ $script:TrivorGuiXaml = @'
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Trivor Installer" Width="1280" Height="800" MinWidth="1100" MinHeight="680"
-        WindowStartupLocation="CenterScreen" Background="#F3F3F3"
+        WindowStartupLocation="CenterScreen" WindowState="Maximized" Background="#F3F3F3"
         FontFamily="Segoe UI" FontSize="14" Foreground="#1B1B1B" UseLayoutRounding="True">
   <Window.Resources>
     <SolidColorBrush x:Key="Accent" Color="#3568B1"/>

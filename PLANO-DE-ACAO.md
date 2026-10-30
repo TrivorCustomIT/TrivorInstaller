@@ -1,7 +1,7 @@
 # Plano de ação — Trivor Installer
 
 Documento vivo com o estado do projeto, os testes pendentes e **todas as decisões de arquitetura em aberto**.
-Atualizado a cada etapa. Última atualização: 17/10/2026.
+Atualizado a cada etapa. Última atualização: 30/10/2026.
 
 > Para retomar: peça "mostre as decisões pendentes" e este arquivo é a referência.
 > Para responder às decisões, use os códigos (ex.: **D1-A, D2-junto, D3-ok**).
@@ -12,31 +12,29 @@ Atualizado a cada etapa. Última atualização: 17/10/2026.
 
 | Item | Situação |
 |---|---|
-| Produção (`main`) | v3.4.4 — Sprint 1 (correção de bugs). Tag `v3.4.4` criada |
-| Branch `claude/dazzling-planck-cafogz` | 4 commits **ainda não estão na `main`**, aguardando os testes da seção 2 |
-| ↳ v3.4.5 (Sprint 2) | Segurança, pasta `C:\TrivorInstaller` com sessões, retenção de logs |
-| ↳ v3.5.0 (adiantado) | Interface gráfica WPF + proteções contra erro do analista + tempo-limite do console |
-| Testes automatizados | 380 passando (sem Windows real) |
-| Validação no Windows já feita | `Validar-Sprint2-Windows.ps1`: 30 OK, 0 falhas |
+| Produção (`main`) | v3.5.2 — interface gráfica WPF, proteções contra erro do analista, nova tentativa automática e MSI reserva do Chrome |
+| Versões publicadas desde a v3.4.3 | v3.4.4 (bugs), v3.4.5 (segurança), v3.5.0 (interface), v3.5.1 (correções do 1º uso), v3.5.2 |
+| Validação no Windows | `Validar-Sprint2-Windows.ps1`: 30 OK · `Validar-v3.5.2-Windows.ps1`: 21 OK · interface e Compliance testados em máquina real (TRV-PE0F7Q77) sem erros |
+| Testes automatizados | Perdidos junto com o scratchpad da sessão; voltam versionados em `tests/` na Sprint 3 |
 
 ---
 
-## 2. Testes que você precisa fazer (liberam o merge)
+## 2. Testes que ainda faltam
 
 Em uma máquina de **teste**, Windows PowerShell **como Administrador**:
 
 ```powershell
-$env:TRIVOR_BRANCH = 'claude/dazzling-planck-cafogz'
-irm https://raw.githubusercontent.com/TrivorCustomIT/TrivorInstaller/claude/dazzling-planck-cafogz/Install.ps1 | iex
+irm https://raw.githubusercontent.com/TrivorCustomIT/TrivorInstaller/main/Install.ps1 | iex
 ```
 
-A branch inclui a Sprint 2: na máquina de teste, `C:\TrivorInstaller` passa a ter permissões restritas e a pasta de sessões.
+Já validado em 30/10/2026: a janela abre maximizada, o cliente é detectado pelo hostname, a escolha de outro cliente
+exige confirmação, o Compliance roda sem erros, e o log mostra a versão e os acentos corretos.
 
 ### T1. Interface gráfica (técnico na tela)
 - [ ] A janela abre com o logo e a lista de clientes; a busca filtra
-- [ ] Em máquina com hostname de cliente (ex.: `FMC-...`), aparece "Cliente detectado" e o botão abre o cliente
-- [ ] Escolher **outro** cliente pede para digitar o nome; com nome errado, não abre
-- [ ] Ao abrir um cliente, o status dos apps aparece em alguns segundos
+- [x] Em máquina com hostname de cliente (ex.: `FMC-...`), aparece "Cliente detectado" e o botão abre o cliente
+- [x] Escolher **outro** cliente pede para digitar o nome; com nome errado, não abre
+- [x] Ao abrir um cliente, o status dos apps aparece em alguns segundos
 - [ ] **Instalar selecionados** (1 ou 2 apps): o progresso e o log andam ao vivo, a janela não congela e o resumo aparece no final
 - [ ] **Pós-Formatação** em máquina já configurada mostra o aviso de Compliance
 - [ ] Antes de cada execução aparece o resumo (cliente, modo, apps, hostname)
@@ -57,8 +55,9 @@ A branch inclui a Sprint 2: na máquina de teste, `C:\TrivorInstaller` passa a t
 - [ ] No log em `C:\TrivorInstaller\Logs`, **não** pode aparecer `SID do usuario logado nao resolvido`
       (se aparecer, me envie o trecho: a correção é pequena)
 
+**Ainda não testado:** Pós-Formatação em máquina limpa, aviso de Pós-Formatação, Upgrade geral executando, T2, T3 e T4.
+
 **O que me enviar:** o resultado de cada item (OK/falha) e, nas falhas, o trecho do log.
-**Com T1–T4 OK:** eu abro o PR (v3.4.5 + v3.5.0), faço o merge e você cria a tag `v3.5.0`.
 
 ---
 
@@ -151,7 +150,7 @@ as configurações de VPN (2) e outros EXEs (5). Os links do Take Control (12) e
 
 | Etapa | Conteúdo | Depende de |
 |---|---|---|
-| **Agora** | Testes T1–T4 → merge v3.4.5 + v3.5.0 → tag `v3.5.0` | Você (seção 2) |
+| **Agora** | Testes restantes da seção 2 (Pós-Formatação limpa, T2–T4) | Você |
 | Fase 1 | JSON padrão | D1–D4 |
 | Sprint 3 | CI no GitHub Actions (Windows), JSON Schema, regra da `main`, relatório da máquina, checklist | D5–D8 |
 | Fase 2 | Remoção de apps do Windows (simulação → ligado) | D9–D13 |
