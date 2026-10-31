@@ -88,18 +88,19 @@ Garantia na conversão: um teste compara, cliente por cliente, a lista final de 
 
 ### Bloco C — Fase 2: remover apps do Windows (Appx) no padrão
 
-Roda só na Pós-Formatação e na ação "Limpeza de fábrica" (nunca no Compliance), com uma lista fixa de nunca
-remover (Store, App Installer/winget, Segurança do Windows, Teams corporativo `MSTeams`, Portal da Empresa,
-bibliotecas do sistema). A primeira versão roda em **modo simulação**.
+**Implementado na v3.6.0** (lista em `Padrao/RemoverAppsWindows.json`). Decidido em 31/10/2026: Compliance remove
+só os itens sem uso corporativo (opção A); a remoção já vale de verdade (sem modo simulação); app não removido conta
+como falha da sessão. Itens "decidir": remover Assistência Rápida, Copilot consumidor, Power Automate, Vincular ao
+Celular e OneNote para Windows 10; manter Outlook novo, Microsoft 365, To Do e Media Player.
 
 | Código | App | Opções | Sugestão |
 |---|---|---|---|
-| **D9** | Xbox / Game Bar | remover · manter | decisão sua (a Game Bar também grava a tela) |
-| **D10** | Clima / Notícias | remover · manter | remover |
-| **D11** | Teams pessoal (`MicrosoftTeams`) | remover · manter | remover |
-| **D12** | Outlook novo / Mail | remover · manter | conforme o uso dos clientes |
+| **D9** | Xbox / Game Bar | **decidido: remover** | — |
+| **D10** | Clima / Notícias | **decidido: remover** | — |
+| **D11** | Teams pessoal (`MicrosoftTeams`) | **decidido: remover** | — |
+| **D12** | Outlook novo / Mail | **decidido: remover o Email e Calendário antigo; manter o Outlook novo** | — |
 | — | OneDrive | — | **manter** (M365 corporativo) |
-| **D13** | Demais itens da lista inicial (Candy Crush, Solitaire, Spotify, Clipchamp, Feedback Hub, Dicas, Obter Ajuda) | aprovar · ajustar | aprovar |
+| **D13** | Demais itens da lista inicial | **decidido: aprovados** | — |
 
 ### Bloco D — Fase 3: remover apps de fábrica (Win32)
 
@@ -143,6 +144,7 @@ as configurações de VPN (2) e outros EXEs (5). Os links do Take Control (12) e
 | Versões | Padrão `vMAIOR.MENOR.BUG` |
 | Plugin oh-my-claudecode | Não instalar no projeto |
 | Agentes RMM no painel | Verificados por você: sem máquinas em cliente errado |
+| Remoção de apps do Windows | Pós-Formatação e Compliance (opção A), remoção real, falha conta na sessão |
 
 ---
 
@@ -153,7 +155,7 @@ as configurações de VPN (2) e outros EXEs (5). Os links do Take Control (12) e
 | **Agora** | Testes restantes da seção 2 (Pós-Formatação limpa, T2–T4) | Você |
 | Fase 1 | JSON padrão | D1–D4 |
 | Sprint 3 | CI no GitHub Actions (Windows), JSON Schema, regra da `main`, relatório da máquina, checklist | D5–D8 |
-| Fase 2 | Remoção de apps do Windows (simulação → ligado) | D9–D13 |
+| Fase 2 | Remoção de apps do Windows | **Feito na v3.6.0** |
 | Fase 3 | Remoção de apps de fábrica | D14–D16 |
 | Sprint 4 | Distribuição segura dos instaladores | D17–D20 |
 

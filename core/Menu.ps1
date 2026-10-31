@@ -232,6 +232,7 @@ function Confirm-TrivorRunPlanConsole {
     Write-Host ("Modo    : {0}" -f $label)
     if ($Plan.Mode -ne 'Hostname') { Write-Host ("Apps    : {0} ({1})" -f $Plan.AppCount, ($Plan.AppNames -join ', ')) }
     Write-Host ("Hostname: {0}" -f $hostText)
+    if ($Plan.RemoveAppx) { Write-Host "Windows : remover apps desnecessarios (lista padrao)" }
     Write-Host "----------------------------------------------------" -ForegroundColor Cyan
     $ok = (Read-Host "Confirmar? (S/N)") -match '^(S|s|Y|y)$'
     if (-not $ok) { Write-Host "Cancelado. Nada foi executado." -ForegroundColor Yellow }

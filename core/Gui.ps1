@@ -180,6 +180,9 @@ function New-TrivorGuiSteps {
     if ($Mode -in @('PostFormat', 'Compliance', 'Hostname') -and $hasPrefix) {
         [void]$steps.Add([pscustomobject]@{ Type = 'hostname'; Name = 'Verificar/renomear hostname'; App = $null; Id = $null })
     }
+    if ($Mode -in @('PostFormat', 'Compliance')) {
+        [void]$steps.Add([pscustomobject]@{ Type = 'appx'; Name = 'Remover apps do Windows desnecessários'; App = $null; Id = $null })
+    }
     switch ($Mode) {
         { $_ -in @('PostFormat', 'Compliance') } {
             foreach ($a in (& $byPriority $Config.Applications)) { [void]$steps.Add([pscustomobject]@{ Type = 'app'; Name = [string]$a.Name; App = $a; Id = $null }) }
@@ -319,6 +322,14 @@ try {
                                 }
                                 else { $detail = 'Falha ao renomear (ver log)' }
                             }
+                        }
+                        'appx' {
+                            Write-Log ("Interface grafica [{0}/{1}]: remover apps do Windows" -f ($i + 1), $steps.Count) "INFO"
+                            $ax = Invoke-TrivorAppxRemoval -Mode $(if ($Payload.Mode -eq 'PostFormat') { 'PostFormat' } else { 'Compliance' })
+                            $ok = [bool]$ax.Ok
+                            if (($ax.Removed + $ax.Failed) -eq 0) { $detail = 'Nenhum app a remover' }
+                            elseif ($ax.Failed -gt 0) { $detail = "$($ax.Removed) removidos, $($ax.Failed) com falha (ver log)" }
+                            else { $detail = "$($ax.Removed) removidos" }
                         }
                         'app' {
                             Write-Log ("Interface grafica [{0}/{1}]: {2}" -f ($i + 1), $steps.Count, $step.Name) "INFO"
@@ -1033,6 +1044,7 @@ function Format-TrivorGuiPlanText {
     $lines = @("Cliente: $($Plan.ClientName)", "Modo: $label")
     if ($Plan.Mode -ne 'Hostname') { $lines += "Aplicativos ($($Plan.AppCount)): $($Plan.AppNames -join ', ')" }
     $lines += "Hostname: $hostText"
+    if ($Plan.RemoveAppx) { $lines += 'Windows: remover apps desnecessários (lista padrão)' }
     return ($lines -join "`n")
 }
 
@@ -1117,7 +1129,7 @@ function Get-TrivorGuiWorkerContext {
     }
     return @{
         CorePath = Join-Path $global:TrivorBasePath 'core'
-        Modules  = @('Logger.ps1', 'Detection.ps1', 'Engine.ps1', 'Hostname.ps1', 'Guard.ps1')
+        Modules  = @('Logger.ps1', 'Detection.ps1', 'Engine.ps1', 'Hostname.ps1', 'Guard.ps1', 'Debloat.ps1')
         Globals  = $globals
     }
 }

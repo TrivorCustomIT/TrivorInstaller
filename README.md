@@ -58,6 +58,21 @@ Para identificar também clientes sem prefixo de hostname, informe no JSON do cl
     "EntraTenantId": "00000000-0000-0000-0000-000000000000"
 
 
+Remoção de apps do Windows
+--------------------------
+
+A Pós-Formatação e o Compliance removem apps do Windows (Appx/MSIX) sem uso corporativo, conforme
+[`Padrao/RemoverAppsWindows.json`](Padrao/RemoverAppsWindows.json):
+
+- **Pós-Formatação:** todos os itens de `Remover`, para todos os usuários, inclusive o pacote provisionado
+  (o app não volta em perfis novos).
+- **Compliance:** só os itens com `"Compliance"` em `Modos` (jogos, Xbox, consumo e apps descontinuados).
+- `NuncaRemover` sempre tem prioridade. O `Id` é o nome do pacote Appx e aceita curinga (`*`).
+- Um app que não pôde ser removido conta como falha da sessão.
+
+Para incluir ou retirar um app, edite o JSON; não é preciso mudar o código.
+
+
 Histórico de versões
 --------------------
 

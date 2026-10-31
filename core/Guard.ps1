@@ -189,6 +189,7 @@ function Get-TrivorRunPlan {
         AppCount         = $count
         AppNames         = @($(if ($Mode -eq 'Update') { $winget } elseif ($Mode -eq 'Hostname') { @() } else { $apps }) | ForEach-Object { [string]$_.Name })
         HostAction       = $hostAction
+        RemoveAppx       = ($Mode -in @('PostFormat', 'Compliance'))
         CurrentHostname  = $CurrentHostname
         ExpectedHostname = $ExpectedHostname
     }

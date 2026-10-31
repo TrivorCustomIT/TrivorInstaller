@@ -187,7 +187,7 @@ function Invoke-TrivorDownloadWithProgress {
                 $request.MaximumAutomaticRedirections = 10
                 $request.Timeout = 300000
                 $request.ReadWriteTimeout = 300000
-                $request.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) TrivorInstaller/3.5.2"
+                $request.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) TrivorInstaller/3.6.0"
                 $request.Accept = "*/*"
 
                 $response = $request.GetResponse()
@@ -1278,6 +1278,7 @@ function Invoke-PostFormatInstallation {
 
     [void](Initialize-Winget)
     Write-Log "Starting POS-FORMATACAO mode for client: $($ClientConfig.Client)" "INFO"
+    if (Get-Command Invoke-TrivorAppxRemovalStep -ErrorAction SilentlyContinue) { Invoke-TrivorAppxRemovalStep -Mode PostFormat }
 
     $apps = @($ClientConfig.Applications) | Sort-Object { Get-AppPriority -App $_ }
     $total = $apps.Count
@@ -1302,6 +1303,7 @@ function Invoke-ClientInstallation {
 
     [void](Initialize-Winget)
     Write-Log "Starting COMPLIANCE mode for client: $($ClientConfig.Client)" "INFO"
+    if (Get-Command Invoke-TrivorAppxRemovalStep -ErrorAction SilentlyContinue) { Invoke-TrivorAppxRemovalStep -Mode Compliance }
 
     $apps = @($ClientConfig.Applications) | Sort-Object { Get-AppPriority -App $_ }
     $total = $apps.Count

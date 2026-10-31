@@ -6,6 +6,25 @@ Padrão de versão (a partir da v3.4.2): `vMAIOR.MENOR.BUG`, por exemplo `v3.4.4
 
 ---
 
+## v3.6.0 — Remoção de apps do Windows desnecessários
+
+### Adicionado
+
+- **Remoção de apps do Windows (Appx/MSIX):** nova etapa "Remover apps do Windows desnecessários", logo após a verificação do hostname e antes das instalações, na interface e no console.
+  - **Pós-Formatação:** remove os 39 itens da lista para todos os usuários e também o pacote provisionado, para o app não voltar em perfis novos.
+  - **Compliance:** remove só os 29 itens sem uso corporativo (jogos, Xbox, conteúdo de consumo e apps descontinuados). Apps patrocinados (Spotify, Netflix, Prime Video, Disney+, TikTok, Instagram) e os itens de governança (Copilot consumidor, Power Automate, Vincular ao Celular, OneNote para Windows 10) ficam só na Pós-Formatação, porque o usuário pode estar usando.
+  - Lista em `Padrao/RemoverAppsWindows.json`. A lista `NuncaRemover` (33 itens: Store, winget, Segurança do Windows, Portal da Empresa, Teams corporativo, Edge, Outlook novo, Microsoft 365, To Do, Media Player, codecs e bibliotecas do sistema) sempre tem prioridade.
+  - Um app que não pôde ser removido conta como falha da sessão (código de saída 2).
+  - O resumo antes de executar informa a remoção.
+- Novo módulo `core/Debloat.ps1`.
+
+### Alterado
+
+- O resumo do fim da sessão no console passou de "N instalados com sucesso" para "N etapas concluídas", porque apps já instalados e a remoção de apps do Windows também contam como etapa.
+- User-Agent e versão de fallback atualizados para 3.6.0.
+
+---
+
 ## v3.5.2 — Nova tentativa automática, instalador reserva do Chrome e interface maximizada
 
 ### Adicionado

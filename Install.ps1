@@ -268,6 +268,7 @@ try {
         "Engine.ps1",
         "Hostname.ps1",
         "Guard.ps1",
+        "Debloat.ps1",
         "Menu.ps1",
         "Gui.ps1"
     )
@@ -374,7 +375,7 @@ finally {
             Write-Log ("Sessao encerrada: {0} ok / {1} falhas / {2} total" -f $successCount, $global:TrivorSessionFailed, $global:TrivorSessionTotal) "INFO"
         }
         Write-Host ""
-        Write-Host ("Sessao: {0} instalados com sucesso, {1} falhas." -f $successCount, $global:TrivorSessionFailed) -ForegroundColor $(if ($global:TrivorSessionFailed -gt 0) { "Yellow" } else { "Green" })
+        Write-Host ("Sessao: {0} etapas concluidas, {1} falhas." -f $successCount, $global:TrivorSessionFailed) -ForegroundColor $(if ($global:TrivorSessionFailed -gt 0) { "Yellow" } else { "Green" })
     }
 
     if ($global:TrivorRebootRequired) {
