@@ -34,6 +34,24 @@
       }
     },
     {
+      "Id": "forticlient-vpn",
+      "Name": "FortiClient VPN",
+      "Detection": {
+        "Method": "Hybrid",
+        "RegistryDisplayName": "FortiClient VPN",
+        "ServiceName": "FortiClient VPN",
+        "ServiceDisplayName": "FortiClient VPN"
+      },
+      "Install": {
+        "Method": "UrlExe",
+        "Url": "https://filestore.fortinet.com/forticlient/downloads/FortiClientVPNInstaller.exe",
+        "SilentArgs": "/silent",
+        "CacheFileName": "FortiClientVPNInstaller.exe",
+        "Sha256": "",
+        "CleanAfterInstall": true
+      }
+    },
+    {
       "Id": "rmm-agent",
       "Name": "Trivor RMM Agent",
       "Detection": {
